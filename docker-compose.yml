@@ -1,0 +1,50 @@
+version: '3.9'
+
+services:
+  db:
+    container_name: postgres-db
+    image: postgres:17
+    environment:
+      POSTGRES_DB: test_db
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql  # Optional: initialize database with a file
+    networks:
+      - db_network
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "user", "-d", "test_db"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+  python-app:
+    container_name: python-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app  # Mount the current directory to /app in the container
+    networks:
+      - db_network
+    environment:
+      - DB_HOST=postgres-db
+      - DB_PORT=5432
+      - DB_USER=user
+      - DB_PASSWORD=password
+      - DB_NAME=test_db
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"  # Exposing Gunicorn's port
+    command: ["gunicorn", "--workers", "3", "--bind", "0.0.0.0:8000", "app.app:app"]  # Flask app entry point
+
+
+volumes:
+  postgres_data:
+
+networks:
+  db_network:
