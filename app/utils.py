@@ -48,13 +48,13 @@ def generate_plot(results):
     """Generate a plot comparing execution times."""
     # Extract limits and times
     limits = [result['limit'] for result in results]
-    select_all_times = [result['select_all_time'] for result in results]
-    select_id_times = [result['select_id_time'] for result in results]
+    select_all_times = [result['query_1_time'] for result in results]
+    select_id_times = [result['query_2_time'] for result in results]
 
     # Create the plot
-    plt.figure(figsize=(10, 6))
-    plt.plot(limits, select_all_times, marker='o', label='SELECT *')
-    plt.plot(limits, select_id_times, marker='s', label='SELECT id')
+    plt.figure(figsize=(12, 8))
+    plt.plot(limits, select_all_times, marker='o', label='Query 1')
+    plt.plot(limits, select_id_times, marker='s', label='Query 2')
     plt.title('SQL Query Execution Time Comparison')
     plt.xlabel('LIMIT')
     plt.ylabel('Execution Time (seconds)')
