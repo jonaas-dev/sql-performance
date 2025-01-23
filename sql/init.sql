@@ -1,7 +1,8 @@
 -- Enable the necessary extension for UUID generation
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- Create the table with 15 columns
+DROP TABLE IF EXISTS users;
+
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     uuid UUID DEFAULT gen_random_uuid(),
@@ -29,7 +30,7 @@ DECLARE
     countries TEXT[] := ARRAY['USA', 'Canada', 'UK', 'Germany', 'France', 'Spain', 'Italy', 'Australia', 'India', 'Brazil'];
     i INT;
 BEGIN
-    FOR i IN 1..10000000 LOOP
+    FOR i IN 1..1000000 LOOP
         INSERT INTO users (name, surname, email, direction, city, country, postal_code, phone, age, bio)
         VALUES (
             first_names[(random() * array_length(first_names, 1))::INT + 1], -- Random first name

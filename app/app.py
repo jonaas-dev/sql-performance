@@ -4,6 +4,23 @@ import os
 import time
 import matplotlib.pyplot as plt
 import io
+import base64
+import pandas as pd
+
+"""
+Constants for the query execution time comparison.
+
+START: The starting value for the LIMIT parameter in the queries.
+STEP: The step value to decrease the LIMIT parameter in the queries.
+
+The queries will be executed with LIMIT values from START to 0 in steps of STEP.
+"""
+START = 1000000
+STEP = 100000
+QUERY_1_NAME = 'Query 1'
+QUERY_2_NAME = 'Query 2'
+
+
 
 # Initialize the Flask app
 app = Flask(__name__)
@@ -29,19 +46,16 @@ def get_db_connection():
 def measure_query_time(query, limit, cursor):
     """Function to execute a query with a limit and measure its execution time."""
     try:
-        # Start timing
         start_time = time.perf_counter()
         cursor.execute(query, (limit,))
         rows = cursor.fetchall()
-        # End timing
         end_time = time.perf_counter()
-
-        execution_time = end_time - start_time
+        execution_time = (end_time - start_time) * 1000  # Convert to milliseconds
         return rows, execution_time
     except Exception as e:
         return None, str(e)
 
-def measure_average_time(query, limit, cursor, repetitions=50):
+def measure_average_time(query, limit, cursor, repetitions=500):
     """Measure average time for a query executed multiple times."""
     times = []
     for _ in range(repetitions):
@@ -56,26 +70,40 @@ def get_query_from_file(filename):
         query = file.read()
     return query
 
-def generate_plot(results):
-    """Generate a plot comparing execution times."""
-    # Extract limits and times
-    limits = [result['limit'] for result in results]
-    select_all_times = [result['query_1_time'] for result in results]
-    select_id_times = [result['query_2_time'] for result in results]
+def save_to_csv(data, filename):
+    """Save query results to a CSV file."""
+    df = pd.DataFrame(data)
+    df.to_csv(filename, index=False)
+    return df
 
-    # Create the plot
-    plt.figure(figsize=(12, 8))
-    plt.plot(limits, select_all_times, marker='o', label='Query 1')
-    plt.plot(limits, select_id_times, marker='s', label='Query 2')
+def generate_comparison_table(query_1_results, query_2_results):
+    """Generate a table comparing query results with an extra column for time difference."""
+    comparison_data = []
+    for q1, q2 in zip(query_1_results, query_2_results):
+        comparison_data.append({
+            'limit': q1['limit'],
+            'query_1_time': q1['time'],
+            'query_2_time': q2['time'],
+            'time_difference': q1['time'] - q2['time']
+        })
+    return pd.DataFrame(comparison_data)
+
+def generate_plot_from_csv(file_1, file_2):
+    """Generate a plot comparing execution times from CSV files."""
+    df1 = pd.read_csv(file_1)
+    df2 = pd.read_csv(file_2)
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(df1['limit'], df1['time'], marker='o', label=QUERY_1_NAME)
+    plt.plot(df2['limit'], df2['time'], marker='s', label=QUERY_2_NAME)
     plt.title('SQL Query Execution Time Comparison')
     plt.xlabel('LIMIT')
-    plt.ylabel('Execution Time (seconds)')
-    plt.xticks(limits)
+    plt.ylabel('Execution Time (milliseconds)')
+    plt.xticks(df1['limit'])
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.legend()
     plt.tight_layout()
 
-    # Save plot to a BytesIO buffer
     buf = io.BytesIO()
     plt.savefig(buf, format='png')
     buf.seek(0)
@@ -87,53 +115,44 @@ def loading_message():
     """Route to display a loading message or generate the plot immediately."""
     if request.args.get('generate') == 'true':
         return index()  # Directly generate the plot
-    return render_template('loading.html')
+    return render_template('results.html')
+
+
 
 @app.route('/generate')
 def index():
     """Route to test and return query execution times."""
-    results = []
-    limits = list(range(10000000, -1, -1000000))
-
-    # Load queries once to avoid redundant file reads
+    limits = [limit for limit in range(START, 0, -STEP)]
     query_1 = get_query_from_file('./queries/query_1.sql')
     query_2 = get_query_from_file('./queries/query_2.sql')
 
-    # Establish a single database connection for all queries
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    query_1_results = []
+    query_2_results = []
 
-    # Warmup queries separately
-    measure_query_time(query_1, 100000, cursor)
-    measure_query_time(query_2, 100000, cursor)
+    with get_db_connection() as conn:
+        with conn.cursor() as cursor:
+            for limit in limits:
+                rows_1, time_1 = measure_query_time(query_1, limit, cursor)
+                rows_2, time_2 = measure_query_time(query_2, limit, cursor)
 
-    for limit in limits:
-        # Measure time for query_1
-        time_1 = measure_average_time(query_1, limit, cursor)
-        
-        # Measure time for query_2
-        time_2 = measure_average_time(query_2, limit, cursor)
+                query_1_results.append({'limit': limit, 'time': time_1, 'rows': rows_1})
+                query_2_results.append({'limit': limit, 'time': time_2, 'rows': rows_2})
 
-        # Store the results
-        if time_1 is not None and time_2 is not None:
-            results.append({
-                'limit': limit,
-                'query_1_time': time_1,
-                'query_2_time': time_2,
-            })
-        else:
-            results.append({
-                'limit': limit,
-                'error': {'query_1': time_1, 'query_2': time_2}
-            })
+    # Save and process results
+    df1 = save_to_csv([{'limit': r['limit'], 'time': r['time']} for r in query_1_results], 'query_1_results.csv')
+    df2 = save_to_csv([{'limit': r['limit'], 'time': r['time']} for r in query_2_results], 'query_2_results.csv')
 
-    # Close the cursor and connection
-    cursor.close()
-    conn.close()
+    plot_buffer = generate_plot_from_csv('query_1_results.csv', 'query_2_results.csv')
+    plot_data = base64.b64encode(plot_buffer.getvalue()).decode('utf-8')
 
-    # Generate and return the plot as an image
-    plot_buffer = generate_plot(results)
-    return Response(plot_buffer, mimetype='image/png')
+    comparison_table = generate_comparison_table(query_1_results, query_2_results)
+    comparison_table_html = comparison_table.to_html(
+        index=False,
+        classes='table table-striped',
+        border=0
+    )
+    return render_template('results.html', plot_data=plot_data, comparison_table=comparison_table_html)
+
 
 if __name__ == '__main__':
     app.run(debug=True)
