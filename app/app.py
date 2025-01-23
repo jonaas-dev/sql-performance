@@ -80,11 +80,15 @@ def generate_comparison_table(query_1_results, query_2_results):
     """Generate a table comparing query results with an extra column for time difference."""
     comparison_data = []
     for q1, q2 in zip(query_1_results, query_2_results):
+        q1_time = q1['time']
+        q2_time = q2['time']
+        diff = q1_time - q2_time
+
         comparison_data.append({
             'limit': q1['limit'],
-            'query_1_time': q1['time'],
-            'query_2_time': q2['time'],
-            'time_difference': q1['time'] - q2['time']
+            'query_1_time': f'{q1_time:.2f} ms',
+            'query_2_time': f'{q2_time:.2f} ms',
+            'time_difference': f'{diff:.2f} ms'
         })
     return pd.DataFrame(comparison_data)
 
