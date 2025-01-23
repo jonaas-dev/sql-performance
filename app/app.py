@@ -143,13 +143,18 @@ def index():
                 query_2_results.append({'limit': limit, 'time': time_2, 'rows': rows_2})
 
     # Save and process results
-    df1 = save_to_csv([{'limit': r['limit'], 'time': r['time']} for r in query_1_results], 'query_1_results.csv')
-    df2 = save_to_csv([{'limit': r['limit'], 'time': r['time']} for r in query_2_results], 'query_2_results.csv')
+    df1 = save_to_csv([{'limit': r['limit'], 'time': r['time']} for r in query_1_results], 'executions_tmp/query_1_results.csv')
+    df2 = save_to_csv([{'limit': r['limit'], 'time': r['time']} for r in query_2_results], 'executions_tmp/query_2_results.csv')
 
-    plot_buffer = generate_plot_from_csv('query_1_results.csv', 'query_2_results.csv')
+    plot_buffer = generate_plot_from_csv('executions_tmp/query_1_results.csv', 'executions_tmp/query_2_results.csv')
     plot_data = base64.b64encode(plot_buffer.getvalue()).decode('utf-8')
 
     comparison_table = generate_comparison_table(query_1_results, query_2_results)
+    
+    # Save the comparison table to a CSV file
+    comparison_table_filename = 'executions_tmp/comparison_table.csv'
+    save_to_csv(comparison_table, comparison_table_filename)
+    
     comparison_table_html = comparison_table.to_html(
         index=False,
         classes='table table-striped',
