@@ -17,4 +17,4 @@ COPY . /app/
 EXPOSE 8000
 
 # Run the Flask app with Gunicorn
-CMD ["gunicorn", "--workers", "3", "--bind", "0.0.0.0:8000", "app.app:app", "--reload"]
+CMD ["gunicorn", "--workers", "3", "--bind", "0.0.0.0:8000", "wsgi:app", "--reload"]
