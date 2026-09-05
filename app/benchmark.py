@@ -1,40 +1,10 @@
-from flask import Flask, redirect, render_template, request, url_for
-import psycopg2
-import os
 import time
-import matplotlib.pyplot as plt
 import io
 import base64
+import matplotlib.pyplot as plt
 import pandas as pd
-from pathlib import Path
 
-START = 1000000
-STEP = 100000
-QUERY_1_NAME = 'Query 1'
-QUERY_2_NAME = 'Query 2'
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-QUERIES_DIR = BASE_DIR / 'queries'
-TMP_DIR = BASE_DIR / 'executions_tmp'
-
-app = Flask(__name__)
-
-db_host = os.getenv('DB_HOST', 'localhost')
-db_port = int(os.getenv('DB_PORT', '5432'))
-db_user = os.getenv('DB_USER', 'user')
-db_password = os.getenv('DB_PASSWORD', 'password')
-db_name = os.getenv('DB_NAME', 'test_db')
-
-
-def get_db_connection():
-    conn = psycopg2.connect(
-        host=db_host,
-        port=db_port,
-        user=db_user,
-        password=db_password,
-        database=db_name
-    )
-    return conn
+from app.config import START, STEP, QUERY_1_NAME, QUERY_2_NAME, TMP_DIR, QUERIES_DIR
 
 
 def measure_query_time(query, limit, cursor):
@@ -51,8 +21,7 @@ def measure_query_time(query, limit, cursor):
 
 def get_query_from_file(filename):
     with open(filename, 'r') as file:
-        query = file.read()
-    return query
+        return file.read()
 
 
 def save_to_csv(data, filename):
@@ -98,13 +67,7 @@ def generate_plot_from_csv(file_1, file_2):
     return buf
 
 
-@app.route('/')
-def landing():
-    return render_template('results.html', plot_data=None, comparison_table=None)
-
-
-@app.route('/generate')
-def generate():
+def run_benchmark(conn):
     TMP_DIR.mkdir(parents=True, exist_ok=True)
 
     limits = list(range(START, 0, -STEP))
@@ -114,19 +77,18 @@ def generate():
     query_1_results = []
     query_2_results = []
 
-    with get_db_connection() as conn:
-        with conn.cursor() as cursor:
-            for limit in limits:
-                rows_1, time_1 = measure_query_time(query_1, limit, cursor)
-                rows_2, time_2 = measure_query_time(query_2, limit, cursor)
-                query_1_results.append({'limit': limit, 'time': time_1, 'rows': rows_1})
-                query_2_results.append({'limit': limit, 'time': time_2, 'rows': rows_2})
+    with conn.cursor() as cursor:
+        for limit in limits:
+            rows_1, time_1 = measure_query_time(query_1, limit, cursor)
+            rows_2, time_2 = measure_query_time(query_2, limit, cursor)
+            query_1_results.append({'limit': limit, 'time': time_1, 'rows': rows_1})
+            query_2_results.append({'limit': limit, 'time': time_2, 'rows': rows_2})
 
-    df1 = save_to_csv(
+    save_to_csv(
         [{'limit': r['limit'], 'time': r['time']} for r in query_1_results],
         str(TMP_DIR / 'query_1_results.csv')
     )
-    df2 = save_to_csv(
+    save_to_csv(
         [{'limit': r['limit'], 'time': r['time']} for r in query_2_results],
         str(TMP_DIR / 'query_2_results.csv')
     )
@@ -140,8 +102,4 @@ def generate():
     comparison_table = generate_comparison_table(query_1_results, query_2_results)
     save_to_csv(comparison_table, str(TMP_DIR / 'comparison_table.csv'))
 
-    return render_template('results.html', plot_data=plot_data, comparison_table=comparison_table)
-
-
-if __name__ == '__main__':
-    app.run(debug=True)
+    return plot_data, comparison_table
