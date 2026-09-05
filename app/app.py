@@ -55,15 +55,6 @@ def measure_query_time(query, limit, cursor):
     except Exception as e:
         return None, str(e)
 
-def measure_average_time(query, limit, cursor, repetitions=500):
-    """Measure average time for a query executed multiple times."""
-    times = []
-    for _ in range(repetitions):
-        _, execution_time = measure_query_time(query, limit, cursor)
-        if isinstance(execution_time, float):
-            times.append(execution_time)
-    return sum(times) / len(times) if times else None
-
 def get_query_from_file(filename):
     """Function to read and return a SQL query from a file."""
     with open(filename, 'r') as file:
