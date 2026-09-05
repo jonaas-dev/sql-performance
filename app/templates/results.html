@@ -10,11 +10,34 @@
 <body>
     <div class="container mt-4">
         <h1 class="text-center">Query Execution Results</h1>
+        {% if plot_data %}
         <div class="text-center">
             <img src="data:image/png;base64,{{ plot_data }}" alt="Query Execution Times" class="img-fluid">
         </div>
+        {% endif %}
         <h2 class="mt-4">Comparison Table</h2>
-        {{ comparison_table|safe }}
+        {% if comparison_table %}
+        <table class="table table-striped">
+            <thead>
+                <tr>
+                    {% for col in comparison_table.columns %}
+                    <th>{{ col }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for _, row in comparison_table.iterrows() %}
+                <tr>
+                    {% for val in row %}
+                    <td>{{ val }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted">Click "Generate" to run the benchmark.</p>
+        {% endif %}
     </div>
 </body>
 </html>
