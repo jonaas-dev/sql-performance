@@ -13,9 +13,11 @@ QUERY_2_NAME = 'Query 2'
 
 
 class Config:
-    DB_HOST = os.getenv('DB_HOST', 'localhost')
-    DB_PORT = int(os.getenv('DB_PORT', '5432'))
-    DB_USER = os.getenv('DB_USER', 'user')
-    DB_PASSWORD = os.getenv('DB_PASSWORD', 'password')
-    DB_NAME = os.getenv('DB_NAME', 'test_db')
-    SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-change-in-prod')
+    def __init__(self):
+        self.DB_HOST = os.getenv('DB_HOST', 'localhost')
+        self.DB_PORT = int(os.getenv('DB_PORT', '5432'))
+        self.DB_USER = os.getenv('DB_USER', 'user')
+        self.DB_PASSWORD = os.getenv('DB_PASSWORD', 'password')
+        self.DB_NAME = os.getenv('DB_NAME', 'test_db')
+        self.SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-change-in-prod')
+        self.TESTING = False
