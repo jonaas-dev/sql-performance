@@ -1,20 +1,21 @@
-# Use a Python base image (replace version if necessary)
-FROM python:3.10
+FROM python:3.12-slim
 
-# Set the working directory in the container
 WORKDIR /app
 
-# Copy the requirements file to the container
-COPY requirements.txt /app/
+RUN adduser --disabled-password --no-create-home appuser
 
-# Install dependencies (including Gunicorn)
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your application code to the container
-COPY . /app/
+COPY . .
 
-# Expose the port your app will run on (8000 by default for Gunicorn)
+RUN chown -R appuser:appuser /app
+
+USER appuser
+
 EXPOSE 8000
 
-# Run the Flask app with Gunicorn
-CMD ["gunicorn", "--workers", "3", "--bind", "0.0.0.0:8000", "wsgi:app", "--reload"]
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/')" || exit 1
+
+CMD ["gunicorn", "--workers", "3", "--bind", "0.0.0.0:8000", "wsgi:app"]
