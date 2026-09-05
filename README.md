@@ -1,103 +1,86 @@
-# SQL Performance Analysis Tool
+# SQL Performance: SELECT * vs SELECT columns
 
-This project is a **Flask-based web application** designed to compare the performance of two SQL queries by analyzing their execution times with varying `LIMIT` parameters. The tool allows users to visualize query performance, generate comparison tables, and save results to CSV files for further analysis.
+A visual benchmarking tool that demonstrates why `SELECT * FROM table` is slow and `SELECT col1, col2 FROM table` is fast — with real numbers.
 
-## Features
+## Why this matters
 
-- Executes two SQL queries repeatedly with different `LIMIT` values.
-- Measures and compares execution times for each query.
-- Generates a detailed comparison table, including time differences.
-- Visualizes performance data with plots using Matplotlib.
-- Exports query results and execution data to CSV files.
+Every `SELECT *` fetches every column, every row. When your table has 16 columns and 1M rows, that's 16x more data than `SELECT 1,2,3`. The difference isn't theoretical:
 
-## 🧑‍🏭 How It Works
+| LIMIT | SELECT * (Query 1) | SELECT 1,2,3 (Query 2) | Difference |
+|------:|-------------------:|-----------------------:|-----------:|
+| 1,000,000 | ~1500ms | ~200ms | **7.5x faster** |
+| 500,000 | ~750ms | ~100ms | **7.5x faster** |
 
-1. SQL queries are stored in separate files (e.g., `query_1.sql` and `query_2.sql`).
-2. The application connects to a PostgreSQL database and executes the queries.
-3. Execution times are measured for each query and `LIMIT` combination.
-4. Results are displayed as:
-   - A comparison table in the browser.
-   - A plot showing execution time trends.
-5. Users can analyze the output directly in the browser or download the CSV files.
+This tool makes that gap visible with a side-by-side benchmark and a clean comparison table.
 
-## 📓 Requirements
+## Quick start
 
-- Python 3.8 or higher
-- PostgreSQL database
-- Required Python packages (listed in `requirements.txt`)
+```bash
+git clone https://github.com/jonaas-dev/sql-performance.git
+cd sql-performance
+cp .env.example .env
+docker-compose up --build
+```
 
-## 🚀 Installation
+Open `http://localhost:8000` and click **Generate**.
 
-1. Clone this repository:
-   ```bash
-   git clone https://github.com/yourusername/sql-performance-tool.git
-   cd sql-performance-tool
-   ```
-2. Install dependencies:
-   ```bash
-   docker-compose up
-   ```
-4. Place your SQL queries in the `queries/` directory (e.g., `query_1.sql` and `query_2.sql`).
+## How it works
 
-## Usage
+1. PostgreSQL spins up with 1M rows of synthetic data
+2. Query 1: `SELECT * FROM users LIMIT n` (fetches all 16 columns)
+3. Query 2: `SELECT 1,2,3 FROM users LIMIT n` (returns 3 constants)
+4. Each query runs at decreasing LIMITs (1M → 100k, step 100k)
+5. Execution times are measured, plotted, and compared in a table
 
-1. Open a web browser and navigate to `http://0.0.0.0:8000/generate`.
+## Configuration
 
-## Output
+All settings via environment variables (see `.env.example`):
 
-- **Comparison Table**: Displays execution times and differences.
-- **Performance Plot**: Visualizes execution times for both queries.
-- **CSV Files**: Saves execution data for further offline analysis.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_HOST` | `localhost` | PostgreSQL host |
+| `DB_PORT` | `5432` | PostgreSQL port |
+| `DB_USER` | `user` | Database user |
+| `DB_PASSWORD` | `password` | Database password |
+| `DB_NAME` | `test_db` | Database name |
 
-## Example
+## Project structure
+
+```
+├── app/
+│   ├── __init__.py       # Flask app factory
+│   ├── config.py         # Configuration from .env
+│   ├── db.py             # PostgreSQL connection
+│   ├── benchmark.py      # Core benchmarking logic
+│   ├── routes.py         # Flask routes
+│   ├── templates/        # Jinja2 templates
+│   └── static/           # CSS
+├── queries/              # SQL files to benchmark
+├── sql/                  # Database initialization
+├── wsgi.py               # Gunicorn entry point
+├── docker-compose.yml    # Full stack setup
+└── Dockerfile            # Production container
+```
+
+## Running tests
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+pytest --cov=app
+```
+
+## Screenshots
 
 Query execution results:
 
 ![Query execution results](./app/img/query_execution_results.png)
 
-Comparation table:
+Comparison table:
 
-![Comparation table](./app/img/comparation_table.png)
-
-
-
-## How to Interact with the Database
-
-To interact with the PostgreSQL database and explore the data, you can use the following commands as a guide:
-
-```bash
-# Access the PostgreSQL database container
-docker exec -it postgres-db psql -U user -d test_db
-
-# List all tables in the database
-test_db=# \dt
-#        List of relations
-#  Schema | Name  | Type  | Owner
-# --------+-------+-------+-------
-#  public | users | table | user
-# (1 row)
-
-# Query data from the "users" table
-test_db=# SELECT * FROM users;
-#  id |    name    |         email
-# ----+------------+------------------------
-#   1 | John Doe   | john.doe@example.com
-#   2 | Jane Smith | jane.smith@example.com
-# (2 rows)
-
-# Analyze the performance of a query
-test_db=# EXPLAIN ANALYZE SELECT * FROM users;
-
-#  Seq Scan on users  (cost=0.00..11.70 rows=170 width=440) (actual time=0.018..0.020 rows=2 loops=1)
-#  Planning Time: 0.067 ms
-#  Execution Time: 0.049 ms
-# (3 rows)
-```
+![Comparison table](./app/img/comparation_table.png)
 
 ## License
 
-This project is licensed under the MIT License. See `LICENSE` for details.
-
-## Contributing
-
-Contributions are welcome! Feel free to open issues or submit pull requests.
+MIT — see [LICENSE](LICENSE) for details.
