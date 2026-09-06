@@ -34,7 +34,7 @@
                 <form action="/generate" method="get" class="card shadow-sm mb-4">
                     <div class="card-body">
                         <div class="row g-3 align-items-end">
-                            <div class="col-md-6">
+                            <div class="col-md-5">
                                 <label for="benchmark" class="form-label fw-semibold">
                                     <i class="bi bi-graph-up me-1"></i>Benchmark
                                 </label>
@@ -46,7 +46,7 @@
                                     {% endfor %}
                                 </select>
                             </div>
-                            <div class="col-md-3">
+                            <div class="col-md-4">
                                 <label for="size" class="form-label fw-semibold">
                                     <i class="bi bi-hdd-stack me-1"></i>Dataset
                                 </label>
@@ -57,12 +57,16 @@
                                     </option>
                                     {% endfor %}
                                 </select>
-                                <div class="form-text">Changing the size reseeds the users table.</div>
                             </div>
                             <div class="col-md-3">
                                 <button type="submit" class="btn btn-primary btn-lg w-100" id="generate-btn">
                                     <i class="bi bi-play-circle me-1"></i>Generate
                                 </button>
+                            </div>
+                            <div class="col-12">
+                                <div class="form-text mt-0">
+                                    Changing the dataset size truncates and reseeds the <code>users</code> table.
+                                </div>
                             </div>
                         </div>
                     </div>
