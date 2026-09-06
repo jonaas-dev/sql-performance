@@ -63,7 +63,7 @@ def generate():
             benchmarks=benchmarks,
             selected_benchmark=benchmark_name,
             selected_size=size,
-            error="Database connection failed. Please check your configuration and try again.",
+            error="Benchmark execution failed. Please check your configuration and try again.",
         )
 
     result_id = save_result(result, {"benchmark": benchmark_name, "size": size})

@@ -38,3 +38,25 @@ def test_view_result_not_found(client):
     assert response.status_code == 200
     assert b"Result not found" in response.data
     assert b"alert-danger" in response.data
+
+
+def test_view_result_found(client, monkeypatch, tmp_path):
+    monkeypatch.setattr("app.history.RESULTS_DIR", tmp_path)
+    from app.history import save_result
+    from benchmarks.base import BenchmarkResult, QueryResult
+    import io, pandas as pd
+
+    q1 = QueryResult(name="Q1", query="SELECT 1", times=[1.0], limits=[100], rows_fetched=[100])
+    comparison = pd.DataFrame({"limit": [100], "q1": ["1.00 ms"]})
+    buf = io.BytesIO()
+    buf.write(b"\x89PNG")
+    buf.seek(0)
+    result = BenchmarkResult(
+        name="test", title="Test Result", description="A test",
+        queries=[q1], comparison_table=comparison, plot_buffer=buf,
+    )
+    result_id = save_result(result, {"size": "small"})
+
+    response = client.get(f"/results/{result_id}")
+    assert response.status_code == 200
+    assert b"Test Result" in response.data
