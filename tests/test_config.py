@@ -1,5 +1,4 @@
-import os
-from app.config import Config, BASE_DIR, QUERIES_DIR, TMP_DIR
+from app.config import BASE_DIR, QUERIES_DIR, Config
 
 
 def test_config_defaults():

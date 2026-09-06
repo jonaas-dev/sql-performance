@@ -1,11 +1,31 @@
+[project]
+name = "sql-performance"
+version = "1.0.0"
+description = "Benchmark toolkit for common SQL performance patterns on PostgreSQL"
+requires-python = ">=3.11"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+timeout = 300
 
 [tool.coverage.run]
-source = ["app"]
+source = ["app", "benchmarks", "sql"]
 omit = ["tests/*"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 50  # TODO: raise back to 70 after adding more route and integration tests
+fail_under = 70
+
+[tool.ruff]
+line-length = 100
+exclude = [".venv", "results"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+# Matplotlib needs its backend set before pyplot-adjacent imports, so the
+# benchmark modules import after a module-level matplotlib.use("Agg").
+ignore = [
+    "E402",  # matplotlib.use("Agg") must run before the backend imports
+    "B027",  # teardown() is an optional hook, deliberately not abstract
+]

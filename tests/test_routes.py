@@ -6,13 +6,25 @@ def test_landing_page(client):
     assert b"Generate" in response.data
 
 
-def test_generate_route_without_db(client):
+def test_generate_without_a_database_shows_a_generic_error():
+    """The old assertion was `has_error or has_results`, and "Generate" is the
+    button label, so it held on every page — it could never fail."""
+    from app import create_app
+    from app.config import Config
+
+    class UnreachableConfig(Config):
+        def __init__(self):
+            super().__init__()
+            self.DB_HOST = "127.0.0.1"
+            self.DB_PORT = 1  # nothing listens here
+
+    client = create_app(UnreachableConfig).test_client()
     response = client.get("/generate")
+
     assert response.status_code == 200
-    assert b"SQL Performance Benchmark" in response.data
-    has_error = b"Database connection failed" in response.data or b"alert-danger" in response.data
-    has_results = b"Results" in response.data or b"Generate" in response.data
-    assert has_error or has_results
+    assert b"Benchmark execution failed" in response.data
+    assert b"alert-danger" in response.data
+    assert b"psycopg2" not in response.data, "internal errors must not leak"
 
 
 def test_generate_with_benchmark_param(client):
@@ -42,9 +54,12 @@ def test_view_result_not_found(client):
 
 def test_view_result_found(client, monkeypatch, tmp_path):
     monkeypatch.setattr("app.history.RESULTS_DIR", tmp_path)
+    import io
+
+    import pandas as pd
+
     from app.history import save_result
     from benchmarks.base import BenchmarkResult, QueryResult
-    import io, pandas as pd
 
     q1 = QueryResult(name="Q1", query="SELECT 1", times=[1.0], limits=[100], rows_fetched=[100])
     comparison = pd.DataFrame({"limit": [100], "q1": ["1.00 ms"]})

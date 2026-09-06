@@ -1,14 +1,15 @@
 import io
+from unittest.mock import MagicMock
+
 import pandas as pd
-from unittest.mock import MagicMock, patch
+
+from app.benchmark import list_benchmarks, result_to_plot_data, run_explain
 from benchmarks.base import BenchmarkResult, QueryResult
-from benchmarks.registry import all, get, default, _registry
-from benchmarks.select_star import SelectStarBenchmark
 from benchmarks.index_usage import IndexUsageBenchmark
 from benchmarks.join_vs_subquery import JoinVsSubqueryBenchmark
 from benchmarks.pagination import PaginationBenchmark
-from app.benchmark import run_benchmark, result_to_plot_data, list_benchmarks, run_explain
-from app.config import QUERIES_DIR
+from benchmarks.registry import all, default, get
+from benchmarks.select_star import SelectStarBenchmark
 
 
 def test_registry_discovery():
@@ -90,9 +91,23 @@ def test_list_benchmarks():
 
 
 def test_result_to_plot_data():
-    q1 = QueryResult(name="Q1", query="SELECT 1", times=[1.0, 2.0], limits=[100, 200], rows_fetched=[100, 200])
-    q2 = QueryResult(name="Q2", query="SELECT 2", times=[0.5, 1.0], limits=[100, 200], rows_fetched=[100, 200])
-    comparison = pd.DataFrame({"limit": [100, 200], "q1": ["1.00 ms", "2.00 ms"], "q2": ["0.50 ms", "1.00 ms"]})
+    q1 = QueryResult(
+        name="Q1",
+        query="SELECT 1",
+        times=[1.0, 2.0],
+        limits=[100, 200],
+        rows_fetched=[100, 200],
+    )
+    q2 = QueryResult(
+        name="Q2",
+        query="SELECT 2",
+        times=[0.5, 1.0],
+        limits=[100, 200],
+        rows_fetched=[100, 200],
+    )
+    comparison = pd.DataFrame(
+        {"limit": [100, 200], "q1": ["1.00 ms", "2.00 ms"], "q2": ["0.50 ms", "1.00 ms"]},
+    )
 
     buf = io.BytesIO()
     buf.write(b"\x89PNG")
@@ -110,8 +125,20 @@ def test_result_to_plot_data():
 
 def test_select_star_build_comparison():
     bm = SelectStarBenchmark()
-    q1 = QueryResult(name="Q1", query="SELECT 1", times=[10.0, 5.0], limits=[1000, 500], rows_fetched=[1000, 500])
-    q2 = QueryResult(name="Q2", query="SELECT 2", times=[2.0, 1.0], limits=[1000, 500], rows_fetched=[1000, 500])
+    q1 = QueryResult(
+        name="Q1",
+        query="SELECT 1",
+        times=[10.0, 5.0],
+        limits=[1000, 500],
+        rows_fetched=[1000, 500],
+    )
+    q2 = QueryResult(
+        name="Q2",
+        query="SELECT 2",
+        times=[2.0, 1.0],
+        limits=[1000, 500],
+        rows_fetched=[1000, 500],
+    )
 
     table = bm._build_comparison(q1, q2)
 
@@ -123,8 +150,20 @@ def test_select_star_build_comparison():
 
 def test_select_star_build_plot():
     bm = SelectStarBenchmark()
-    q1 = QueryResult(name="Q1", query="SELECT 1", times=[1.0, 2.0], limits=[100, 200], rows_fetched=[100, 200])
-    q2 = QueryResult(name="Q2", query="SELECT 2", times=[0.5, 1.0], limits=[100, 200], rows_fetched=[100, 200])
+    q1 = QueryResult(
+        name="Q1",
+        query="SELECT 1",
+        times=[1.0, 2.0],
+        limits=[100, 200],
+        rows_fetched=[100, 200],
+    )
+    q2 = QueryResult(
+        name="Q2",
+        query="SELECT 2",
+        times=[0.5, 1.0],
+        limits=[100, 200],
+        rows_fetched=[100, 200],
+    )
 
     buf = bm._build_plot(q1, q2)
 
@@ -135,8 +174,20 @@ def test_select_star_build_plot():
 
 def test_index_usage_build_plot():
     bm = IndexUsageBenchmark()
-    q1 = QueryResult(name="No idx", query="SELECT 1", times=[10.0, 5.0], limits=[20, 30], rows_fetched=[1000, 500])
-    q2 = QueryResult(name="Idx", query="SELECT 2", times=[2.0, 1.0], limits=[20, 30], rows_fetched=[1000, 500])
+    q1 = QueryResult(
+        name="No idx",
+        query="SELECT 1",
+        times=[10.0, 5.0],
+        limits=[20, 30],
+        rows_fetched=[1000, 500],
+    )
+    q2 = QueryResult(
+        name="Idx",
+        query="SELECT 2",
+        times=[2.0, 1.0],
+        limits=[20, 30],
+        rows_fetched=[1000, 500],
+    )
 
     buf = bm._build_plot(q1, q2)
 
@@ -158,7 +209,13 @@ def test_join_vs_subquery_build_plot():
 
 def test_pagination_build_plot():
     bm = PaginationBenchmark()
-    q1 = QueryResult(name="OFFSET", query="SELECT 1", times=[10.0], limits=[100], rows_fetched=[100])
+    q1 = QueryResult(
+        name="OFFSET",
+        query="SELECT 1",
+        times=[10.0],
+        limits=[100],
+        rows_fetched=[100],
+    )
     q2 = QueryResult(name="Keyset", query="SELECT 2", times=[2.0], limits=[100], rows_fetched=[100])
 
     buf = bm._build_plot(q1, q2)
