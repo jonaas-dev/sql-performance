@@ -9,6 +9,7 @@ import pandas as pd
 from benchmarks.base import BenchmarkBase, BenchmarkResult, QueryResult
 from benchmarks.registry import register
 from app.config import TMP_DIR
+from app.benchmark import run_explain
 
 
 @register
@@ -24,10 +25,10 @@ class IndexUsageBenchmark(BenchmarkBase):
             conn.commit()
 
     def run(self, conn) -> BenchmarkResult:
-        query_no_idx = "SELECT * FROM users WHERE age > %s"
-        query_with_idx = "SELECT * FROM users WHERE age > %s"
+        query_no_idx = "SELECT * FROM users WHERE age = %s"
+        query_with_idx = "SELECT * FROM users WHERE age = %s"
 
-        thresholds = [20, 30, 40, 50, 60]
+        thresholds = [25, 30, 35, 40, 45]
 
         q1_times, q2_times = [], []
         q1_rows, q2_rows = [], []
@@ -47,22 +48,28 @@ class IndexUsageBenchmark(BenchmarkBase):
                 q2_rows.append(rows)
 
         q1 = QueryResult(
-            name="Without index",
-            query=query_no_idx.replace("%s", "20"),
+            name="Seq Scan (no index)",
+            query=query_no_idx.replace("%s", "35"),
             times=q1_times, limits=thresholds, rows_fetched=q1_rows,
         )
         q2 = QueryResult(
-            name="With B-tree index",
-            query=query_with_idx.replace("%s", "20"),
+            name="Index Scan (with B-tree)",
+            query=query_with_idx.replace("%s", "35"),
             times=q2_times, limits=thresholds, rows_fetched=q2_rows,
         )
 
-        comparison = self._build_comparison(q1, q2, "age >")
+        explain_plans = {
+            q1.name: run_explain(conn, q1.query, (35,)),
+            q2.name: run_explain(conn, q2.query, (35,)),
+        }
+
+        comparison = self._build_comparison(q1, q2, "age =")
         plot = self._build_plot(q1, q2)
 
         return BenchmarkResult(
             name=self.name, title=self.title, description=self.description,
             queries=[q1, q2], comparison_table=comparison, plot_buffer=plot,
+            explain_plans=explain_plans,
         )
 
     def teardown(self, conn) -> None:
@@ -97,7 +104,7 @@ class IndexUsageBenchmark(BenchmarkBase):
         ax.plot(q1.limits, q1.times, marker="o", label=q1.name, color="#e74c3c")
         ax.plot(q2.limits, q2.times, marker="s", label=q2.name, color="#2ecc71")
         ax.set_title(self.title)
-        ax.set_xlabel("age threshold")
+        ax.set_xlabel("age = value")
         ax.set_ylabel("Execution Time (ms)")
         ax.set_xticks(q1.limits)
         ax.grid(True, linestyle="--", alpha=0.6)

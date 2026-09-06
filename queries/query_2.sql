@@ -1,1 +1,1 @@
-SELECT 1,2,3 FROM users LIMIT %s;
+SELECT id, name, email FROM users LIMIT %s;

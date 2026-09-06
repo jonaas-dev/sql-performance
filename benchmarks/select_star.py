@@ -71,11 +71,12 @@ class SelectStarBenchmark(BenchmarkBase):
         rows = []
         for i, limit in enumerate(q1.limits):
             diff = q1.times[i] - q2.times[i]
+            speedup = f"{q1.times[i] / q2.times[i]:.1f}x" if q2.times[i] > 0 else "N/A"
             rows.append({
                 "limit": limit,
-                "query_1_time": f"{q1.times[i]:.2f} ms",
-                "query_2_time": f"{q2.times[i]:.2f} ms",
-                "time_difference": f"{diff:.2f} ms",
+                "select_star": f"{q1.times[i]:.2f} ms",
+                "select_columns": f"{q2.times[i]:.2f} ms",
+                "speedup": speedup,
             })
         return pd.DataFrame(rows)
 
