@@ -40,7 +40,8 @@ def test_list_results(tmp_path, monkeypatch):
     result = _make_result()
     save_result(result, {"size": "small"})
 
-    results = list_results()
+    results, total = list_results()
+    assert total == 1
     assert len(results) == 1
     assert results[0]["benchmark"] == "test_benchmark"
     assert "id" in results[0]
@@ -48,8 +49,9 @@ def test_list_results(tmp_path, monkeypatch):
 
 def test_list_results_empty(tmp_path, monkeypatch):
     monkeypatch.setattr("app.history.RESULTS_DIR", tmp_path)
-    results = list_results()
+    results, total = list_results()
     assert results == []
+    assert total == 0
 
 
 def test_load_result(tmp_path, monkeypatch):

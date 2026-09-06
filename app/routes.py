@@ -85,8 +85,18 @@ def generate():
 
 @bp.route("/history")
 def history():
-    results = list_results()
-    return render_template("history.html", results=results)
+    page = max(1, request.args.get("page", 1, type=int))
+    per_page = 8
+    offset = (page - 1) * per_page
+    results, total = list_results(limit=per_page, offset=offset)
+    total_pages = max(1, -(-total // per_page))
+    return render_template(
+        "history.html",
+        results=results,
+        page=page,
+        total_pages=total_pages,
+        total=total,
+    )
 
 
 @bp.route("/results/<result_id>")

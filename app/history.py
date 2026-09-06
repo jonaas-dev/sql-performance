@@ -41,11 +41,11 @@ def save_result(result: BenchmarkResult, params: dict) -> str:
     return dirname
 
 
-def list_results() -> list[dict]:
+def list_results(limit: int = 8, offset: int = 0) -> tuple[list[dict], int]:
     if not RESULTS_DIR.exists():
-        return []
+        return [], 0
 
-    results = []
+    all_results = []
     for d in sorted(RESULTS_DIR.iterdir(), reverse=True):
         if not d.is_dir():
             continue
@@ -53,9 +53,10 @@ def list_results() -> list[dict]:
         if metadata_file.exists():
             meta = json.loads(metadata_file.read_text())
             meta["id"] = d.name
-            results.append(meta)
+            all_results.append(meta)
 
-    return results
+    total = len(all_results)
+    return all_results[offset : offset + limit], total
 
 
 def load_result(result_id: str) -> dict | None:
