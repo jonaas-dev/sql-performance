@@ -185,7 +185,6 @@ sql-performance/
 │   ├── index_usage.py       # B-tree index impact
 │   ├── join_vs_subquery.py  # JOIN vs IN vs EXISTS
 │   └── pagination.py        # OFFSET vs keyset
-├── queries/                 # SQL files (loaded by benchmarks)
 ├── sql/
 │   ├── init.sql             # Schema only
 │   └── seed.py              # Parametrized seeder (small/medium/large)

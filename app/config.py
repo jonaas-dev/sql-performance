@@ -2,10 +2,6 @@ import os
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-QUERIES_DIR = BASE_DIR / 'queries'
-
-QUERY_1_NAME = 'SELECT *'
-QUERY_2_NAME = 'SELECT id, name, email'
 
 
 class Config:

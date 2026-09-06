@@ -7,7 +7,6 @@ import pandas as pd
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
-from app.config import QUERIES_DIR, QUERY_1_NAME, QUERY_2_NAME
 from benchmarks.base import (
     BenchmarkBase,
     BenchmarkNotApplicable,
@@ -20,6 +19,12 @@ from benchmarks.registry import register
 
 DATA_POINTS = 10
 
+QUERY_ALL_COLUMNS = "SELECT * FROM users LIMIT %s"
+QUERY_THREE_COLUMNS = "SELECT id, name, email FROM users LIMIT %s"
+
+LABEL_ALL_COLUMNS = "SELECT *"
+LABEL_THREE_COLUMNS = "SELECT id, name, email"
+
 
 @register
 class SelectStarBenchmark(BenchmarkBase):
@@ -27,10 +32,6 @@ class SelectStarBenchmark(BenchmarkBase):
     title = "SELECT * vs SELECT columns"
     description = "Demonstrates why SELECT * is slow and selecting specific columns is fast"
     required_tables = ["users"]
-
-    def _get_query(self, filename: str) -> str:
-        with open(QUERIES_DIR / filename) as f:
-            return f.read()
 
     def _limits(self, total: int) -> list[int]:
         """LIMITs must stay inside the table: a LIMIT above the row count
@@ -47,27 +48,25 @@ class SelectStarBenchmark(BenchmarkBase):
 
     def run(self, conn) -> BenchmarkResult:
         limits = self._limits(table_row_count(conn))
-        query_1 = self._get_query("query_1.sql")
-        query_2 = self._get_query("query_2.sql")
 
         q1_times, q2_times = [], []
         q1_rows, q2_rows = [], []
 
         with conn.cursor() as cursor:
             for limit in limits:
-                rows_1, t1 = measure(cursor, query_1, (limit,))
-                rows_2, t2 = measure(cursor, query_2, (limit,))
+                rows_1, t1 = measure(cursor, QUERY_ALL_COLUMNS, (limit,))
+                rows_2, t2 = measure(cursor, QUERY_THREE_COLUMNS, (limit,))
                 q1_times.append(t1)
                 q2_times.append(t2)
                 q1_rows.append(rows_1)
                 q2_rows.append(rows_2)
 
         q1 = QueryResult(
-            name=QUERY_1_NAME, query=query_1,
+            name=LABEL_ALL_COLUMNS, query=QUERY_ALL_COLUMNS,
             times=q1_times, limits=limits, rows_fetched=q1_rows,
         )
         q2 = QueryResult(
-            name=QUERY_2_NAME, query=query_2,
+            name=LABEL_THREE_COLUMNS, query=QUERY_THREE_COLUMNS,
             times=q2_times, limits=limits, rows_fetched=q2_rows,
         )
 

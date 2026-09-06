@@ -1,4 +1,4 @@
-from app.config import BASE_DIR, QUERIES_DIR, Config
+from app.config import BASE_DIR, Config
 
 
 def test_config_defaults():
@@ -35,9 +35,3 @@ def test_config_port_cast(monkeypatch):
 def test_base_dir():
     assert BASE_DIR.exists()
     assert (BASE_DIR / 'app').exists()
-
-
-def test_queries_dir():
-    assert QUERIES_DIR.exists()
-    assert (QUERIES_DIR / 'query_1.sql').exists()
-    assert (QUERIES_DIR / 'query_2.sql').exists()

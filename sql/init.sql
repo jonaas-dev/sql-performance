@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(100),
     surname VARCHAR(100),
     email VARCHAR(100),
-    direction VARCHAR(200),
+    address VARCHAR(200),
     city VARCHAR(100),
     country VARCHAR(100),
     postal_code VARCHAR(20),

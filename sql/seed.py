@@ -40,7 +40,7 @@ WITH arrays AS (
            %(cities)s::TEXT[]      AS cities,
            %(countries)s::TEXT[]   AS countries
 )
-INSERT INTO users (name, surname, email, direction, city, country,
+INSERT INTO users (name, surname, email, address, city, country,
                    postal_code, phone, age, bio)
 SELECT
     a.first_names[1 + floor(random() * array_length(a.first_names, 1))::INT],
