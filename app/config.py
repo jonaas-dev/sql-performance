@@ -8,8 +8,8 @@ TMP_DIR = BASE_DIR / 'executions_tmp'
 
 START = 1000000
 STEP = 100000
-QUERY_1_NAME = 'Query 1'
-QUERY_2_NAME = 'Query 2'
+QUERY_1_NAME = 'SELECT *'
+QUERY_2_NAME = 'SELECT id, name, email'
 
 
 class Config:

@@ -117,8 +117,8 @@ def test_select_star_build_comparison():
 
     assert isinstance(table, pd.DataFrame)
     assert len(table) == 2
-    assert "10.00 ms" in table.iloc[0]["query_1_time"]
-    assert "8.00 ms" in table.iloc[0]["time_difference"]
+    assert "10.00 ms" in table.iloc[0]["select_star"]
+    assert "5.0x" in table.iloc[0]["speedup"]
 
 
 def test_select_star_build_plot():

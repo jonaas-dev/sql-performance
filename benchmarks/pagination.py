@@ -9,6 +9,7 @@ import pandas as pd
 from benchmarks.base import BenchmarkBase, BenchmarkResult, QueryResult
 from benchmarks.registry import register
 from app.config import TMP_DIR
+from app.benchmark import run_explain
 
 
 @register
@@ -56,9 +57,15 @@ class PaginationBenchmark(BenchmarkBase):
         comparison = self._build_comparison(q1, q2)
         plot = self._build_plot(q1, q2)
 
+        explain_plans = {
+            q1.name: run_explain(conn, f"SELECT * FROM users ORDER BY id LIMIT 100 OFFSET 500000"),
+            q2.name: run_explain(conn, f"SELECT * FROM users WHERE id > 500000 ORDER BY id LIMIT 100"),
+        }
+
         return BenchmarkResult(
             name=self.name, title=self.title, description=self.description,
             queries=[q1, q2], comparison_table=comparison, plot_buffer=plot,
+            explain_plans=explain_plans,
         )
 
     def teardown(self, conn) -> None:

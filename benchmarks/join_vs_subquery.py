@@ -9,6 +9,7 @@ import pandas as pd
 from benchmarks.base import BenchmarkBase, BenchmarkResult, QueryResult
 from benchmarks.registry import register
 from app.config import TMP_DIR
+from app.benchmark import run_explain
 
 
 @register
@@ -87,9 +88,16 @@ class JoinVsSubqueryBenchmark(BenchmarkBase):
         comparison = self._build_comparison(q1, q2, q3)
         plot = self._build_plot(q1, q2, q3)
 
+        explain_plans = {
+            q1.name: run_explain(conn, q1.query, (100,)),
+            q2.name: run_explain(conn, q2.query, (100,)),
+            q3.name: run_explain(conn, q3.query, (100,)),
+        }
+
         return BenchmarkResult(
             name=self.name, title=self.title, description=self.description,
             queries=[q1, q2, q3], comparison_table=comparison, plot_buffer=plot,
+            explain_plans=explain_plans,
         )
 
     def teardown(self, conn) -> None:
