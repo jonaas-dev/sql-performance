@@ -4,6 +4,7 @@ from flask import Blueprint, render_template, request
 
 from app.benchmark import run_benchmark, result_to_plot_data, list_benchmarks
 from app.db import get_db_connection
+from app.history import save_result, list_results, load_result
 from benchmarks import get as get_benchmark
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,8 @@ def generate():
             error=str(e),
         )
 
+    result_id = save_result(result, {"benchmark": benchmark_name, "size": size})
+
     benchmarks = list_benchmarks()
     return render_template(
         "results.html",
@@ -76,4 +79,26 @@ def generate():
         benchmark_title=result.title,
         benchmark_description=result.description,
         explain_plans=result.explain_plans or None,
+        result_id=result_id,
+    )
+
+
+@bp.route("/history")
+def history():
+    results = list_results()
+    return render_template("history.html", results=results)
+
+
+@bp.route("/results/<result_id>")
+def view_result(result_id):
+    data = load_result(result_id)
+    if data is None:
+        return render_template("history.html", results=list_results(), error="Result not found")
+
+    return render_template(
+        "view_result.html",
+        result=data,
+        plot_data=data.get("plot_data"),
+        comparison_table=data.get("comparison_table"),
+        explain_plans=data.get("explain_plans"),
     )
