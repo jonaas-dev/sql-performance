@@ -19,5 +19,6 @@ class Config:
         self.DB_USER = os.getenv('DB_USER', 'user')
         self.DB_PASSWORD = os.getenv('DB_PASSWORD', 'password')
         self.DB_NAME = os.getenv('DB_NAME', 'test_db')
+        self.DB_SEED_SIZE = os.getenv('DB_SEED_SIZE', 'medium')
         self.SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-change-in-prod')
         self.TESTING = False

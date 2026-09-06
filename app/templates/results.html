@@ -12,7 +12,7 @@
         <h1 class="text-center">SQL Performance Benchmark</h1>
 
         <form action="/generate" method="get" class="row g-3 my-4">
-            <div class="col-md-8">
+            <div class="col-md-6">
                 <label for="benchmark" class="form-label">Select benchmark</label>
                 <select name="benchmark" id="benchmark" class="form-select">
                     {% for bm in benchmarks %}
@@ -22,7 +22,15 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-4 d-flex align-items-end">
+            <div class="col-md-3">
+                <label for="size" class="form-label">Dataset size</label>
+                <select name="size" id="size" class="form-select">
+                    <option value="small" {% if selected_size == 'small' %}selected{% endif %}>Small (10K rows)</option>
+                    <option value="medium" {% if selected_size == 'medium' or not selected_size %}selected{% endif %}>Medium (100K rows)</option>
+                    <option value="large" {% if selected_size == 'large' %}selected{% endif %}>Large (1M rows)</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
                 <button type="submit" class="btn btn-primary w-100">Generate</button>
             </div>
         </form>
