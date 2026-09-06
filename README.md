@@ -1,143 +1,135 @@
 <h1 align="center">🔍 SQL Performance Benchmark</h1>
 
 <p align="center">
-  <strong>Identify and understand SQL performance issues — with real numbers and EXPLAIN ANALYZE</strong>
+  <strong>Measure SQL performance patterns on PostgreSQL — with honest numbers and real EXPLAIN ANALYZE output</strong>
 </p>
 
 <p align="center">
   <a href="https://python.org"><img src="https://img.shields.io/badge/python-3.11+-3776AB.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-00D26A.svg?style=for-the-badge" alt="License"></a>
   <a href="Dockerfile"><img src="https://img.shields.io/badge/docker-ready-2496ED.svg?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"></a>
-  <a href="#testing"><img src="https://img.shields.io/badge/tests-33%20passing-brightgreen.svg?style=for-the-badge" alt="Tests"></a>
+  <a href="../../actions/workflows/ci.yml"><img src="../../actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
 ---
 
 ## What is this?
 
-A toolkit for **detecting and understanding SQL performance problems** — not just measuring them.
+A toolkit for **measuring common SQL performance patterns** against a real PostgreSQL database.
 
-Every query has a cost. Some are obvious (`SELECT *` on a wide table), some are subtle (`OFFSET` pagination that degrades under load), and some depend on context (`JOIN` vs `subquery` vs `EXISTS`). This tool runs real benchmarks against PostgreSQL, measures the actual impact, and shows you **why** one approach is faster with `EXPLAIN ANALYZE`.
-
-**Built for developers who want data, not opinions.**
+Every query has a cost. Some are obvious (`SELECT *` on a wide table), some are subtle (`OFFSET`
+pagination that degrades with page depth), and some depend entirely on context (`JOIN` vs `subquery`
+vs `EXISTS`). This tool runs the queries, times them, and shows the query plan behind each result.
 
 <p align="center">
   <img src="app/img/screenshot_landing.png" alt="Landing page" width="800">
   <br>
-  <em>Choose a benchmark, select dataset size, and click Generate</em>
+  <em>Choose a benchmark and a dataset size, then click Generate</em>
 </p>
 
 ---
 
-## Benchmark examples
+## How the measurements work
 
-The toolkit includes several built-in benchmarks that demonstrate common performance patterns. Each one tests a specific scenario, measures execution time across different data sizes, and explains the query plan.
+The numbers are only worth something if the method is. This is what the tool does on every data point:
+
+| | Why |
+|---|---|
+| **One discarded warm-up run** | Without it, whichever query runs first pays for the cold cache. That alone was enough to make the "slow" query look slow. |
+| **Median of 5 timed runs** | A single sample is dominated by scheduler noise. The median ignores the outlier that a mean would carry. |
+| **Data points derived from the real row count** | A `LIMIT` above the table size returns the whole table every time, which flattens the curve into a straight line of noise. |
+| **`rows_fetched` shown in every table** | So you can see the query actually returned something. A benchmark over an empty result set measures nothing. |
+| **Timing includes `fetchall()`** | The cost of `SELECT *` is largely transferring and materialising the columns, so the client-side fetch is part of what is being measured. |
+
+### What this is not
+
+These are **wall-clock timings on a synthetic dataset in a container**, not a claim about your
+production database. Row counts, hardware, PostgreSQL version, `work_mem`, concurrency and data
+distribution all move these numbers. Use the tool to see *why* a plan changes — read the
+`EXPLAIN ANALYZE` output, not just the chart.
 
 ---
+
+## Benchmarks
 
 ### 📊 SELECT * vs SELECT columns
 
-> *The most common performance trap*
-
 ```sql
--- Fetches all 16 columns
-SELECT * FROM users LIMIT 1000000;
-
--- Fetches only 3 columns
-SELECT id, name, email FROM users LIMIT 1000000;
+SELECT * FROM users LIMIT %s;
+SELECT id, name, email FROM users LIMIT %s;
 ```
 
-**Why it matters**: Every extra column adds I/O, memory, and network overhead. On a table with 16 columns and 1M rows, `SELECT *` transfers **16x more data** than selecting specific columns.
+The `users` table has 16 columns, one of them a `TEXT` bio that dominates the row width. Selecting 3
+narrow columns instead of all 16 cuts the bytes PostgreSQL has to read, materialise and ship to the
+client. The LIMITs sweep from 10% to 100% of the table, so the curve reflects a growing result set
+rather than the same query run ten times.
 
 <p align="center">
   <img src="app/img/screenshot_select_star.png" alt="SELECT * vs columns benchmark" width="800">
-  <br>
-  <em>Chart shows execution time comparison with EXPLAIN ANALYZE output</em>
 </p>
-
----
 
 ### ⚡ Index usage
 
-> *Why B-tree indexes are not optional*
-
 ```sql
--- Full table scan (no index)
-SELECT * FROM users WHERE age > 30;
-
--- Index scan (after CREATE INDEX)
-SELECT * FROM users WHERE age > 30;
+SELECT * FROM users WHERE age = %s;   -- before CREATE INDEX
+SELECT * FROM users WHERE age = %s;   -- after  CREATE INDEX
 ```
 
-**Why it matters**: Without an index, PostgreSQL reads **every row** in the table. With a B-tree index on the filtered column, it jumps directly to matching rows.
+Same query, twice: once with no index on `age`, then again after `CREATE INDEX`. **The "no index"
+plan is captured before the index exists** — otherwise both `EXPLAIN` runs report the same indexed
+plan and the label lies about what you are looking at.
+
+Note that on a small dataset PostgreSQL may legitimately still choose a sequential scan: reading
+10,000 rows is cheaper than an index lookup plus heap fetches. That is the planner being right, not
+the benchmark being broken — pick a larger dataset size to see the crossover.
 
 <p align="center">
   <img src="app/img/screenshot_index_usage.png" alt="Index usage benchmark" width="800">
-  <br>
-  <em>Red line: without index (Seq Scan). Green line: with B-tree index (Index Scan)</em>
 </p>
-
----
 
 ### 🔗 JOIN vs subquery vs EXISTS
 
-> *Three ways to filter related data*
-
 ```sql
--- Pattern 1: JOIN (when you need columns from both tables)
-SELECT u.id, u.name, o.amount
-FROM users u INNER JOIN orders o ON u.id = o.user_id
-WHERE o.amount > 100;
+SELECT u.id, u.name, u.email, o.amount
+FROM users u INNER JOIN sqlperf_orders o ON u.id = o.user_id
+WHERE o.amount > %s;
 
--- Pattern 2: IN subquery (when you only need the main table)
-SELECT id, name FROM users
-WHERE id IN (SELECT user_id FROM orders WHERE amount > 100);
+SELECT id, name, email FROM users
+WHERE id IN (SELECT user_id FROM sqlperf_orders WHERE amount > %s);
 
--- Pattern 3: EXISTS (when you only need to check existence)
-SELECT id, name FROM users u
-WHERE EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id AND o.amount > 100);
+SELECT id, name, email FROM users u
+WHERE EXISTS (SELECT 1 FROM sqlperf_orders o WHERE o.user_id = u.id AND o.amount > %s);
 ```
 
-**Why it matters**: Each pattern has different performance characteristics depending on data distribution, indexes, and result set size. There is no universal "fastest" — only fastest **for your case**.
+Each pattern has different characteristics depending on data distribution, indexes and result set
+size. There is no universal "fastest" — often the planner rewrites `IN` and `EXISTS` into the same
+plan, which the `EXPLAIN` output will show you directly.
 
 <p align="center">
   <img src="app/img/screenshot_join.png" alt="JOIN vs subquery benchmark" width="800">
-  <br>
-  <em>Three patterns compared across different filtering thresholds</em>
 </p>
-
----
 
 ### 📄 OFFSET vs keyset pagination
 
-> *Why `OFFSET 500000` is slow*
-
 ```sql
--- OFFSET: must scan and discard all skipped rows
-SELECT * FROM users ORDER BY id LIMIT 10 OFFSET 500000;
-
--- Keyset: jumps directly to position
-SELECT * FROM users WHERE id > 500000 ORDER BY id LIMIT 10;
+SELECT * FROM users ORDER BY id LIMIT 100 OFFSET %s;      -- scans and discards
+SELECT * FROM users WHERE id > %s ORDER BY id LIMIT 100;  -- jumps straight there
 ```
 
-**Why it matters**: OFFSET pagination degrades linearly with page number. At page 50,000, PostgreSQL reads 500K rows just to discard them. Keyset pagination stays **constant** regardless of position.
+The page size is held at 100 and **the offset is what varies**, from the first page to the deepest
+one the dataset allows. That is the whole point: `OFFSET` has to walk and throw away every skipped
+row, so its cost grows with page *depth*, while keyset pagination stays flat.
 
 <p align="center">
   <img src="app/img/screenshot_pagination.png" alt="Pagination benchmark" width="800">
-  <br>
-  <em>Red: OFFSET degrades. Green: Keyset stays constant</em>
 </p>
-
----
 
 ### 📜 Historical results
 
-Every benchmark run is saved with timestamp. Compare results over time via the `/history` endpoint.
+Every run is saved with a timestamp under `results/` and browsable at `/history`.
 
 <p align="center">
   <img src="app/img/screenshot_history.png" alt="History page" width="800">
-  <br>
-  <em>All benchmark runs saved for comparison</em>
 </p>
 
 ---
@@ -148,18 +140,29 @@ Every benchmark run is saved with timestamp. Compare results over time via the `
 git clone https://github.com/jonaas-dev/sql-performance.git
 cd sql-performance
 cp .env.example .env
-docker-compose up --build
+docker compose up --build
 ```
 
-Open **http://localhost:8000**, select a benchmark, choose dataset size, and click **Generate**.
+Open **http://localhost:8000**.
+
+Compose brings up PostgreSQL, seeds it to `DB_SEED_SIZE`, and only then starts the app. The database
+and the app are both bound to `127.0.0.1`, so nothing is exposed outside your machine.
 
 ### Dataset sizes
 
-| Size | Rows | Use case |
-|------|------|----------|
-| `small` | 10,000 | Development, quick tests |
-| `medium` | 100,000 | Daily benchmarking |
-| `large` | 1,000,000 | Serious performance testing |
+| Size | Rows | Seed time |
+|------|------|-----------|
+| `small` | 10,000 | ~1s |
+| `medium` | 100,000 | ~2s |
+| `large` | 1,000,000 | ~15s |
+
+Set the initial size with `DB_SEED_SIZE` in `.env`. **Changing the size in the web UI reseeds the
+`users` table** — it truncates and regenerates the data so the selector reflects reality rather than
+being a label on an unchanged dataset.
+
+> ⚠️ **The tool writes to the database it connects to.** It truncates `users` when reseeding, and
+> creates and drops `sqlperf_orders` and `sqlperf_idx_users_age` around the relevant benchmarks.
+> Point it at a throwaway database, never at one with data you care about.
 
 ---
 
@@ -169,14 +172,14 @@ Open **http://localhost:8000**, select a benchmark, choose dataset size, and cli
 sql-performance/
 ├── app/
 │   ├── __init__.py          # Flask app factory
-│   ├── config.py            # Configuration from .env
+│   ├── config.py            # Configuration from environment
 │   ├── db.py                # PostgreSQL connection
 │   ├── benchmark.py         # Benchmark runner + EXPLAIN ANALYZE
 │   ├── history.py           # Historical results storage (filesystem)
 │   ├── routes.py            # Flask routes
 │   └── templates/           # Jinja2 templates
 ├── benchmarks/
-│   ├── base.py              # BenchmarkBase ABC — all benchmarks extend this
+│   ├── base.py              # BenchmarkBase ABC + the shared measure() helper
 │   ├── registry.py          # Auto-discovery — drop a file, it's registered
 │   ├── select_star.py       # SELECT * vs columns
 │   ├── index_usage.py       # B-tree index impact
@@ -184,73 +187,69 @@ sql-performance/
 │   └── pagination.py        # OFFSET vs keyset
 ├── queries/                 # SQL files (loaded by benchmarks)
 ├── sql/
-│   ├── init.sql             # DDL + seed data
+│   ├── init.sql             # Schema only
 │   └── seed.py              # Parametrized seeder (small/medium/large)
-├── tests/                   # pytest tests (33 tests)
+├── tests/                   # pytest — unit + PostgreSQL integration
 ├── wsgi.py                  # Gunicorn entry point
-├── docker-compose.yml       # PostgreSQL + Flask app
-└── Dockerfile               # Production container
+├── docker-compose.yml       # PostgreSQL + seeder + app
+└── Dockerfile
 ```
 
 ---
 
 ## Adding your own benchmark
 
-The plugin architecture makes it easy to add new benchmarks. Here's the full process:
-
-### Step 1: Create a benchmark file
-
-Create a new `.py` file in `benchmarks/` (e.g., `benchmarks/deadlock_demo.py`):
+Drop a `.py` file in `benchmarks/`. The registry discovers it on import — no registration code.
 
 ```python
-import time
 import io
+
 import matplotlib
 matplotlib.use("Agg")
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_agg import FigureCanvasAgg
 import pandas as pd
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
 
-from benchmarks.base import BenchmarkBase, BenchmarkResult, QueryResult
+from benchmarks.base import (
+    BenchmarkBase, BenchmarkResult, QueryResult, measure, table_row_count,
+)
 from benchmarks.registry import register
+
+QUERY = "SELECT * FROM users WHERE city = %s"
 
 
 @register
-class DeadlockDemo(BenchmarkBase):
-    name = "deadlock_demo"
-    title = "Deadlock detection patterns"
-    description = "Compare LOCK timeout vs row-level locking strategies"
+class CityFilterBenchmark(BenchmarkBase):
+    name = "city_filter"
+    title = "Filtering by city with and without an index"
+    description = "Compare a seq scan against a B-tree index on a low-cardinality column"
     required_tables = ["users"]
 
     def setup(self, conn) -> None:
-        """Create indexes, temp tables, or test data before the benchmark."""
-        with conn.cursor() as cur:
-            cur.execute(
-                "CREATE INDEX IF NOT EXISTS idx_users_city ON users(city)"
-            )
-            conn.commit()
+        self.check_requirements(conn)   # fails loudly if `users` is missing
 
     def run(self, conn) -> BenchmarkResult:
-        """Execute queries, measure times, build results."""
-        cities = ["New York", "London", "Tokyo", "Berlin", "Sydney"]
-        times = []
+        # Cities that actually exist in the seed data.
+        cities = ["New York", "Los Angeles", "Chicago", "Houston", "Phoenix"]
+        times, rows_fetched = [], []
 
         with conn.cursor() as cur:
             for city in cities:
-                start = time.perf_counter()
-                cur.execute("SELECT * FROM users WHERE city = %s", (city,))
-                cur.fetchall()
-                elapsed = (time.perf_counter() - start) * 1000
+                rows, elapsed = measure(cur, QUERY, (city,))   # warm-up + median
                 times.append(elapsed)
+                rows_fetched.append(rows)
 
-        queries = [QueryResult(
+        query = QueryResult(
             name="Filter by city",
-            query="SELECT * FROM users WHERE city = %s",
-            times=times, limits=cities, rows_fetched=1000,
-        )]
+            query=QUERY,
+            times=times,
+            limits=cities,          # x-axis values
+            rows_fetched=rows_fetched,
+        )
 
         comparison = pd.DataFrame({
             "city": cities,
+            "rows_matched": rows_fetched,
             "time_ms": [round(t, 2) for t in times],
         })
 
@@ -259,9 +258,9 @@ class DeadlockDemo(BenchmarkBase):
         ax = fig.add_subplot(111)
         ax.plot(cities, times, marker="o")
         ax.set_xlabel("City")
-        ax.set_ylabel("Time (ms)")
-        ax.set_title("Deadlock Demo")
+        ax.set_ylabel("Median execution time (ms)")
         ax.grid(True, alpha=0.3)
+        fig.tight_layout()
 
         buf = io.BytesIO()
         canvas.print_png(buf)
@@ -269,52 +268,40 @@ class DeadlockDemo(BenchmarkBase):
 
         return BenchmarkResult(
             name=self.name, title=self.title, description=self.description,
-            queries=queries, comparison_table=comparison,
-            plot_buffer=buf, explain_plans={},
+            queries=[query], comparison_table=comparison, plot_buffer=buf,
         )
 
     def teardown(self, conn) -> None:
-        """Clean up any created objects."""
-        with conn.cursor() as cur:
-            cur.execute("DROP INDEX IF EXISTS idx_users_city")
-            conn.commit()
+        """Drop anything setup() created. Prefix objects with `sqlperf_`."""
 ```
 
-### Step 2: That's it
+### The contract
 
-The registry auto-discovers new files in `benchmarks/`. No import, no registration code. Just drop the file and restart.
-
-### Step 3: What each method does
-
-| Method | Purpose | Examples |
-|--------|---------|----------|
-| `setup(conn)` | Prepare the database before measuring | Create indexes, temp tables, seed test data |
-| `run(conn)` | Execute queries, measure times, return results | Run queries with `time.perf_counter()`, build plot |
-| `teardown(conn)` | Clean up after the benchmark | Drop indexes, temp tables |
-
-### Step 4: Required attributes
+| Method | Purpose |
+|--------|---------|
+| `setup(conn)` | Prepare the database. Call `self.check_requirements(conn)` first. |
+| `run(conn)` | Execute queries with `measure()`, return a `BenchmarkResult`. |
+| `teardown(conn)` | Drop anything `setup()` created. Optional. |
 
 | Attribute | Type | Purpose |
 |-----------|------|---------|
-| `name` | `str` | Unique identifier (used in URL: `?benchmark=name`) |
-| `title` | `str` | Human-readable name (shown in UI) |
+| `name` | `str` | Unique id, used in the URL: `?benchmark=name` |
+| `title` | `str` | Shown in the UI |
 | `description` | `str` | What this benchmark tests |
-| `required_tables` | `list[str]` | Tables that must exist before setup |
+| `required_tables` | `list[str]` | Enforced by `check_requirements()` |
 
-### Step 5: Return value
+`BenchmarkResult` carries `queries` (a list of `QueryResult`), a `comparison_table` DataFrame, a
+`plot_buffer` PNG, and optionally `explain_plans`. When `explain_plans` is empty the runner collects
+them automatically — supply them yourself when the plan must be captured at a specific moment, as
+`index_usage` does.
 
-Your `run()` method must return a `BenchmarkResult` with:
-
-- **`queries`**: List of `QueryResult` objects (name, query text, execution times, data points)
-- **`comparison_table`**: A pandas DataFrame shown in the UI table
-- **`plot_buffer`**: A `BytesIO` containing a PNG image (the chart)
-- **`explain_plans`**: Dict of query name → EXPLAIN ANALYZE text (optional, auto-collected if empty)
+**Helpers worth using:** `measure(cursor, query, params)` gives you the warm-up plus median for free,
+and `table_row_count(conn)` lets you size your data points to the dataset instead of hardcoding them.
+Raise `BenchmarkNotApplicable` when the dataset is too small for your benchmark to mean anything.
 
 ---
 
 ## Configuration
-
-All settings via environment variables (see `.env.example`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -323,7 +310,8 @@ All settings via environment variables (see `.env.example`):
 | `DB_USER` | `user` | Database user |
 | `DB_PASSWORD` | `password` | Database password |
 | `DB_NAME` | `test_db` | Database name |
-| `DB_SEED_SIZE` | `medium` | Dataset size (`small`/`medium`/`large`) |
+| `DB_SEED_SIZE` | `medium` | Initial dataset size (`small`/`medium`/`large`) |
+| `LOG_LEVEL` | `INFO` | Python logging level |
 
 ---
 
@@ -332,22 +320,32 @@ All settings via environment variables (see `.env.example`):
 | Route | Description |
 |-------|-------------|
 | `GET /` | Landing page with benchmark selector |
-| `GET /generate?benchmark=<name>&size=<size>` | Run a benchmark |
-| `GET /history` | List all historical benchmark runs |
-| `GET /results/<id>` | View a specific historical result |
+| `GET /generate?benchmark=<name>&size=<size>` | Reseed if needed, then run a benchmark |
+| `GET /history` | List historical runs (paginated) |
+| `GET /results/<id>` | View a stored result |
 
 ---
 
-## Testing
+## Development
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
-pytest --cov=app
+
+ruff check .
+pytest --cov
 ```
 
-**33 tests** covering registry discovery, benchmark metadata, plot generation, config, history, and routes.
+The suite is split in two:
+
+- **Unit tests** run anywhere with no database.
+- **Integration tests** (`tests/test_integration.py`) need PostgreSQL and are skipped when none is
+  reachable. They are the ones that guard the measurement contract — that every benchmark fetches
+  rows, that data points stay inside the dataset, and that the two index plans actually differ.
+
+Point them at a database with `TEST_DB_HOST`, `TEST_DB_PORT`, `TEST_DB_USER`, `TEST_DB_PASSWORD` and
+`TEST_DB_NAME`. CI always provides one, so the integration gates never silently skip there.
 
 ---
 
