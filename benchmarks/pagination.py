@@ -13,7 +13,9 @@ from benchmarks.base import (
     BenchmarkNotApplicable,
     BenchmarkResult,
     QueryResult,
+    format_ms,
     measure,
+    speedup,
     table_row_count,
 )
 from benchmarks.registry import register
@@ -52,26 +54,21 @@ class PaginationBenchmark(BenchmarkBase):
     def run(self, conn) -> BenchmarkResult:
         offsets = self._offsets(table_row_count(conn))
 
-        q1_times, q1_rows = [], []
-        q2_times, q2_rows = [], []
-
+        m1, m2 = [], []
         with conn.cursor() as cur:
             for offset in offsets:
-                rows, elapsed = measure(cur, QUERY_OFFSET, (PAGE_SIZE, offset))
-                q1_times.append(elapsed)
-                q1_rows.append(rows)
-
-                rows, elapsed = measure(cur, QUERY_KEYSET, (offset, PAGE_SIZE))
-                q2_times.append(elapsed)
-                q2_rows.append(rows)
+                m1.append(measure(cur, QUERY_OFFSET, (PAGE_SIZE, offset)))
+                m2.append(measure(cur, QUERY_KEYSET, (offset, PAGE_SIZE)))
 
         q1 = QueryResult(
-            name="OFFSET", query=QUERY_OFFSET,
-            times=q1_times, limits=offsets, rows_fetched=q1_rows,
+            name="OFFSET", query=QUERY_OFFSET, limits=offsets,
+            times=[m.wall_ms for m in m1], rows_fetched=[m.rows_fetched for m in m1],
+            server_times=[m.server_ms for m in m1],
         )
         q2 = QueryResult(
-            name="Keyset (WHERE id >)", query=QUERY_KEYSET,
-            times=q2_times, limits=offsets, rows_fetched=q2_rows,
+            name="Keyset (WHERE id >)", query=QUERY_KEYSET, limits=offsets,
+            times=[m.wall_ms for m in m2], rows_fetched=[m.rows_fetched for m in m2],
+            server_times=[m.server_ms for m in m2],
         )
 
         deepest = offsets[-1]
@@ -89,14 +86,15 @@ class PaginationBenchmark(BenchmarkBase):
     def _build_comparison(self, q1, q2):
         rows = []
         for i, offset in enumerate(q1.limits):
-            speedup = f"{q1.times[i] / q2.times[i]:.1f}x" if q2.times[i] > 0 else "N/A"
             rows.append({
                 "offset": offset,
                 "page": offset // PAGE_SIZE + 1,
-                "rows_fetched": q1.rows_fetched[i],
-                "offset_ms": f"{q1.times[i]:.2f} ms",
-                "keyset_ms": f"{q2.times[i]:.2f} ms",
-                "speedup": speedup,
+                "rows": q1.rows_fetched[i],
+                "offset (total)": format_ms(q1.times[i]),
+                "offset (server)": format_ms(q1.server_times[i]),
+                "keyset (total)": format_ms(q2.times[i]),
+                "keyset (server)": format_ms(q2.server_times[i]),
+                "speedup (server)": speedup(q1.server_times[i], q2.server_times[i]),
             })
         return pd.DataFrame(rows)
 

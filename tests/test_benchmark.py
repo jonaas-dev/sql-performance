@@ -131,6 +131,7 @@ def test_select_star_build_comparison():
         times=[10.0, 5.0],
         limits=[1000, 500],
         rows_fetched=[1000, 500],
+        server_times=[4.0, 2.0],
     )
     q2 = QueryResult(
         name="Q2",
@@ -138,14 +139,17 @@ def test_select_star_build_comparison():
         times=[2.0, 1.0],
         limits=[1000, 500],
         rows_fetched=[1000, 500],
+        server_times=[1.0, 0.5],
     )
 
     table = bm._build_comparison(q1, q2)
 
     assert isinstance(table, pd.DataFrame)
     assert len(table) == 2
-    assert "10.00 ms" in table.iloc[0]["select_star"]
-    assert "5.0x" in table.iloc[0]["speedup"]
+    assert "10.00 ms" in table.iloc[0]["select_star (total)"]
+    assert "4.00 ms" in table.iloc[0]["select_star (server)"]
+    assert "5.0x" in table.iloc[0]["speedup (total)"]
+    assert "4.0x" in table.iloc[0]["speedup (server)"]
 
 
 def test_select_star_build_plot():

@@ -12,7 +12,10 @@ from benchmarks.base import (
     BenchmarkNotApplicable,
     BenchmarkResult,
     QueryResult,
+    format_ms,
     measure,
+    plot_server_series,
+    speedup,
     table_row_count,
 )
 from benchmarks.registry import register
@@ -49,25 +52,21 @@ class SelectStarBenchmark(BenchmarkBase):
     def run(self, conn) -> BenchmarkResult:
         limits = self._limits(table_row_count(conn))
 
-        q1_times, q2_times = [], []
-        q1_rows, q2_rows = [], []
-
+        m1, m2 = [], []
         with conn.cursor() as cursor:
             for limit in limits:
-                rows_1, t1 = measure(cursor, QUERY_ALL_COLUMNS, (limit,))
-                rows_2, t2 = measure(cursor, QUERY_THREE_COLUMNS, (limit,))
-                q1_times.append(t1)
-                q2_times.append(t2)
-                q1_rows.append(rows_1)
-                q2_rows.append(rows_2)
+                m1.append(measure(cursor, QUERY_ALL_COLUMNS, (limit,)))
+                m2.append(measure(cursor, QUERY_THREE_COLUMNS, (limit,)))
 
         q1 = QueryResult(
-            name=LABEL_ALL_COLUMNS, query=QUERY_ALL_COLUMNS,
-            times=q1_times, limits=limits, rows_fetched=q1_rows,
+            name=LABEL_ALL_COLUMNS, query=QUERY_ALL_COLUMNS, limits=limits,
+            times=[m.wall_ms for m in m1], rows_fetched=[m.rows_fetched for m in m1],
+            server_times=[m.server_ms for m in m1],
         )
         q2 = QueryResult(
-            name=LABEL_THREE_COLUMNS, query=QUERY_THREE_COLUMNS,
-            times=q2_times, limits=limits, rows_fetched=q2_rows,
+            name=LABEL_THREE_COLUMNS, query=QUERY_THREE_COLUMNS, limits=limits,
+            times=[m.wall_ms for m in m2], rows_fetched=[m.rows_fetched for m in m2],
+            server_times=[m.server_ms for m in m2],
         )
 
         return BenchmarkResult(
@@ -80,13 +79,15 @@ class SelectStarBenchmark(BenchmarkBase):
     def _build_comparison(self, q1: QueryResult, q2: QueryResult) -> pd.DataFrame:
         rows = []
         for i, limit in enumerate(q1.limits):
-            speedup = f"{q1.times[i] / q2.times[i]:.1f}x" if q2.times[i] > 0 else "N/A"
             rows.append({
                 "limit": limit,
-                "rows_fetched": q1.rows_fetched[i],
-                "select_star": f"{q1.times[i]:.2f} ms",
-                "select_columns": f"{q2.times[i]:.2f} ms",
-                "speedup": speedup,
+                "rows": q1.rows_fetched[i],
+                "select_star (total)": format_ms(q1.times[i]),
+                "select_star (server)": format_ms(q1.server_times[i]),
+                "3 cols (total)": format_ms(q2.times[i]),
+                "3 cols (server)": format_ms(q2.server_times[i]),
+                "speedup (total)": speedup(q1.times[i], q2.times[i]),
+                "speedup (server)": speedup(q1.server_times[i], q2.server_times[i]),
             })
         return pd.DataFrame(rows)
 
@@ -94,9 +95,11 @@ class SelectStarBenchmark(BenchmarkBase):
         fig = Figure(figsize=(10, 6))
         canvas = FigureCanvasAgg(fig)
         ax = fig.add_subplot(111)
-        ax.plot(q1.limits, q1.times, marker="o", label=q1.name, color="#e74c3c")
-        ax.plot(q2.limits, q2.times, marker="s", label=q2.name, color="#2ecc71")
-        ax.set_title(f"{self.title} (median of {len(q1.limits)} points)")
+        ax.plot(q1.limits, q1.times, marker="o", label=f"{q1.name} — total", color="#e74c3c")
+        ax.plot(q2.limits, q2.times, marker="s", label=f"{q2.name} — total", color="#2ecc71")
+        plot_server_series(ax, q1, "#e74c3c")
+        plot_server_series(ax, q2, "#2ecc71")
+        ax.set_title(f"{self.title} — solid: total, dashed: PostgreSQL only")
         ax.set_xlabel("LIMIT (rows fetched)")
         ax.set_ylabel("Median execution time (ms)")
         ax.set_xticks(q1.limits)

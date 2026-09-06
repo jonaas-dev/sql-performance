@@ -35,18 +35,30 @@ The numbers are only worth something if the method is. This is what the tool doe
 
 | | Why |
 |---|---|
+| **Two timings per data point** | **total** is the wall clock an application feels — planning, execution, transfer and the driver building Python objects. **server** is PostgreSQL's own `Execution Time` from `EXPLAIN (ANALYZE, TIMING OFF)`. The gap between them is the client. |
 | **One discarded warm-up run** | Without it, whichever query runs first pays for the cold cache. That alone was enough to make the "slow" query look slow. |
 | **Median of 5 timed runs** | A single sample is dominated by scheduler noise. The median ignores the outlier that a mean would carry. |
 | **Data points derived from the real row count** | A `LIMIT` above the table size returns the whole table every time, which flattens the curve into a straight line of noise. |
-| **`rows_fetched` shown in every table** | So you can see the query actually returned something. A benchmark over an empty result set measures nothing. |
-| **Timing includes `fetchall()`** | The cost of `SELECT *` is largely transferring and materialising the columns, so the client-side fetch is part of what is being measured. |
+| **Row counts shown in every table** | So you can see the query actually returned something. A benchmark over an empty result set measures nothing. |
+
+### Why both timings matter
+
+Reporting only the wall clock is how a client-side cost gets presented as a database result. On this
+dataset, `SELECT * LIMIT 10000` takes **17.22 ms total but 0.31 ms inside PostgreSQL** — 98% of what
+you would be "measuring" is psycopg2 turning bytes into tuples.
+
+It cuts the other way too. Adding a B-tree index to `WHERE age = 35` improves the wall clock by only
+**2.1x**, because fetching and shipping the matching rows swamps the lookup. PostgreSQL's own time
+improves by **7.7x**. Judge the index on the second number; budget your endpoint with the first.
+
+In the charts, **solid lines are the total and dashed lines are PostgreSQL alone**.
 
 ### What this is not
 
-These are **wall-clock timings on a synthetic dataset in a container**, not a claim about your
-production database. Row counts, hardware, PostgreSQL version, `work_mem`, concurrency and data
-distribution all move these numbers. Use the tool to see *why* a plan changes — read the
-`EXPLAIN ANALYZE` output, not just the chart.
+These are **timings on a synthetic dataset in a container**, not a claim about your production
+database. Row counts, hardware, PostgreSQL version, `work_mem`, concurrency and data distribution all
+move these numbers. Use the tool to see *why* a plan changes — read the `EXPLAIN ANALYZE` output, not
+just the chart.
 
 ---
 
@@ -59,10 +71,18 @@ SELECT * FROM users LIMIT %s;
 SELECT id, name, email FROM users LIMIT %s;
 ```
 
-The `users` table has 16 columns, one of them a `TEXT` bio that dominates the row width. Selecting 3
-narrow columns instead of all 16 cuts the bytes PostgreSQL has to read, materialise and ship to the
-client. The LIMITs sweep from 10% to 100% of the table, so the curve reflects a growing result set
-rather than the same query run ten times.
+The `users` table has 16 columns. `EXPLAIN` puts the full row at **143 bytes** against **30 bytes**
+for the three-column projection — a 4.8x difference in what has to be shipped, and the measured
+total-time gap lands at ~5x, right where the widths predict.
+
+The interesting part is where that time goes. **PostgreSQL is marginally *faster* for `SELECT *`**
+(0.31 ms vs 0.46 ms at 10k rows): returning the stored tuple needs no projection work, while picking
+three columns means building a new one. The entire penalty is on the client — 98% of the wall clock
+is psycopg2 decoding 16 columns instead of 3.
+
+So `SELECT *` is worth avoiding, but not for the reason it is usually given. It is not straining the
+planner; it is straining your application and your network. The LIMITs sweep from 10% to 100% of the
+table, so the curve reflects a growing result set rather than the same query run ten times.
 
 <p align="center">
   <img src="app/img/screenshot_select_star.png" alt="SELECT * vs columns benchmark" width="800">
@@ -79,9 +99,14 @@ Same query, twice: once with no index on `age`, then again after `CREATE INDEX`.
 plan is captured before the index exists** — otherwise both `EXPLAIN` runs report the same indexed
 plan and the label lies about what you are looking at.
 
-Note that on a small dataset PostgreSQL may legitimately still choose a sequential scan: reading
-10,000 rows is cheaper than an index lookup plus heap fetches. That is the planner being right, not
-the benchmark being broken — pick a larger dataset size to see the crossover.
+This is the clearest case for reading both lines. At 100k rows the index is worth **7.7x** to
+PostgreSQL (5.25 ms → 0.68 ms) but only **2.1x** on the wall clock (8.16 ms → 3.83 ms), because
+`SELECT *` ships ~1,600 wide rows either way and that transfer cost is indifferent to how they were
+found. An index speeds up *finding* rows, not *sending* them.
+
+On a small dataset PostgreSQL may legitimately still choose a sequential scan: reading 10,000 rows is
+cheaper than an index lookup plus heap fetches. That is the planner being right, not the benchmark
+being broken — pick a larger dataset size to see the crossover.
 
 <p align="center">
   <img src="app/img/screenshot_index_usage.png" alt="Index usage benchmark" width="800">
@@ -101,9 +126,19 @@ SELECT id, name, email FROM users u
 WHERE EXISTS (SELECT 1 FROM sqlperf_orders o WHERE o.user_id = u.id AND o.amount > %s);
 ```
 
-Each pattern has different characteristics depending on data distribution, indexes and result set
-size. There is no universal "fastest" — often the planner rewrites `IN` and `EXISTS` into the same
-plan, which the `EXPLAIN` output will show you directly.
+**These three do not return the same thing.** Each user has up to 5 orders, so `JOIN` emits one row
+per matching *order* while `IN` and `EXISTS` emit one row per matching *user*: at `amount > 50` that
+is **225,245 rows against 95,077**. Comparing their times without noticing that is comparing two
+different questions.
+
+Which is exactly what makes it interesting. `JOIN` is the fastest of the three inside PostgreSQL
+(40.8 ms vs 47.1 and 55.8) and the slowest overall (160.6 ms vs 83.4 and 78.3), because it ships 2.4x
+more rows. `IN` and `EXISTS` usually collapse to the same `Hash Semi Join` — the `EXPLAIN` output
+shows it directly.
+
+> An earlier version of this benchmark gave every user at most one order. With 1:1 data there is no
+> fan-out, all three return identical row sets, and the planner produces byte-identical plans — it
+> compared three spellings of the same query.
 
 <p align="center">
   <img src="app/img/screenshot_join.png" alt="JOIN vs subquery benchmark" width="800">
@@ -119,6 +154,10 @@ SELECT * FROM users WHERE id > %s ORDER BY id LIMIT 100;  -- jumps straight ther
 The page size is held at 100 and **the offset is what varies**, from the first page to the deepest
 one the dataset allows. That is the whole point: `OFFSET` has to walk and throw away every skipped
 row, so its cost grows with page *depth*, while keyset pagination stays flat.
+
+This is the one benchmark where the server number is the dramatic one, because both queries return
+the same 100 rows and the transfer cost cancels out. At page 400, PostgreSQL spends 1.80 ms on
+`OFFSET` and 0.01 ms on keyset — **150x** — while the wall clock only shows 4x.
 
 <p align="center">
   <img src="app/img/screenshot_pagination.png" alt="Pagination benchmark" width="800">
@@ -210,7 +249,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from benchmarks.base import (
-    BenchmarkBase, BenchmarkResult, QueryResult, measure, table_row_count,
+    BenchmarkBase, BenchmarkResult, QueryResult, format_ms, measure, table_row_count,
 )
 from benchmarks.registry import register
 
@@ -230,26 +269,25 @@ class CityFilterBenchmark(BenchmarkBase):
     def run(self, conn) -> BenchmarkResult:
         # Cities that actually exist in the seed data.
         cities = ["New York", "Los Angeles", "Chicago", "Houston", "Phoenix"]
-        times, rows_fetched = [], []
 
         with conn.cursor() as cur:
-            for city in cities:
-                rows, elapsed = measure(cur, QUERY, (city,))   # warm-up + median
-                times.append(elapsed)
-                rows_fetched.append(rows)
+            # measure() does the warm-up, the median and the server timing.
+            results = [measure(cur, QUERY, (city,)) for city in cities]
 
         query = QueryResult(
             name="Filter by city",
             query=QUERY,
-            times=times,
             limits=cities,          # x-axis values
-            rows_fetched=rows_fetched,
+            times=[m.wall_ms for m in results],
+            rows_fetched=[m.rows_fetched for m in results],
+            server_times=[m.server_ms for m in results],
         )
 
         comparison = pd.DataFrame({
             "city": cities,
-            "rows_matched": rows_fetched,
-            "time_ms": [round(t, 2) for t in times],
+            "rows": query.rows_fetched,
+            "total": [format_ms(m.wall_ms) for m in results],
+            "server": [format_ms(m.server_ms) for m in results],
         })
 
         fig = Figure(figsize=(8, 5))
@@ -294,9 +332,15 @@ class CityFilterBenchmark(BenchmarkBase):
 them automatically — supply them yourself when the plan must be captured at a specific moment, as
 `index_usage` does.
 
-**Helpers worth using:** `measure(cursor, query, params)` gives you the warm-up plus median for free,
-and `table_row_count(conn)` lets you size your data points to the dataset instead of hardcoding them.
-Raise `BenchmarkNotApplicable` when the dataset is too small for your benchmark to mean anything.
+**Helpers worth using:** `measure(cursor, query, params)` returns a `Measurement` with
+`rows_fetched`, `wall_ms`, `server_ms` and a `client_share` property, doing the warm-up, the median
+and the `EXPLAIN` for you. `table_row_count(conn)` lets you size your data points to the dataset
+instead of hardcoding them, `format_ms` and `speedup` keep table columns consistent, and
+`plot_server_series(ax, query, color)` adds the dashed server line to a chart. Raise
+`BenchmarkNotApplicable` when the dataset is too small for your benchmark to mean anything.
+
+**Report both timings.** A table with only wall-clock numbers cannot distinguish a query PostgreSQL
+struggles with from one that merely returns a lot of data.
 
 ---
 

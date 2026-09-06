@@ -180,3 +180,42 @@ def test_seed_fails_fast_instead_of_hanging_on_a_locked_table(conn):
         other.close()
     finally:
         blocker.close()
+
+
+def test_join_benchmark_data_is_one_to_many(conn):
+    """With one order per user, JOIN never fans out and the three patterns
+    collapse to the same plan — the benchmark would compare nothing."""
+    bm = get("join_vs_subquery")
+    bm.setup(conn)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT max(c) FROM ("
+                "  SELECT user_id, count(*) c FROM sqlperf_orders GROUP BY user_id"
+                ") t"
+            )
+            assert cur.fetchone()[0] > 1, "orders must be 1:N for the comparison to mean anything"
+
+        result = bm.run(conn)
+    finally:
+        bm.teardown(conn)
+
+    join, in_subquery = result.queries[0], result.queries[1]
+    assert any(j > i for j, i in zip(join.rows_fetched, in_subquery.rows_fetched, strict=True)), (
+        "JOIN must return more rows than IN/EXISTS somewhere, otherwise there is no fan-out"
+    )
+
+
+def test_every_benchmark_reports_server_side_timings(conn):
+    """Wall time is mostly client deserialisation; without the server number
+    a client-side cost reads as a database result."""
+    for name in [bm.name for bm in all_benchmarks()]:
+        bm = get(name)
+        bm.setup(conn)
+        try:
+            result = bm.run(conn)
+        finally:
+            bm.teardown(conn)
+        for query in result.queries:
+            assert len(query.server_times) == len(query.times)
+            assert all(t is not None for t in query.server_times), f"{name}/{query.name}"
