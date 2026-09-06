@@ -12,6 +12,7 @@ from benchmarks.base import (
     BenchmarkBase,
     BenchmarkResult,
     QueryResult,
+    format_ms,
     measure,
 )
 from benchmarks.registry import register
@@ -39,12 +40,20 @@ QUERY_EXISTS = f"""
 THRESHOLDS = [50, 100, 200, 300, 400]
 EXPLAIN_THRESHOLD = 100
 
+# Each user gets between 0 and MAX_ORDERS_PER_USER orders. Without a real 1:N
+# relationship the three patterns are indistinguishable.
+MAX_ORDERS_PER_USER = 5
+ORDER_PROBABILITY = 0.5
+
 
 @register
 class JoinVsSubqueryBenchmark(BenchmarkBase):
     name = "join_vs_subquery"
     title = "JOIN vs subquery for filtering"
-    description = "Compares JOIN, IN (subquery) and EXISTS for relational filtering"
+    description = (
+        "Compares JOIN, IN (subquery) and EXISTS when a user has many orders — "
+        "JOIN fans out one row per order, IN and EXISTS collapse to a semi-join"
+    )
     required_tables = ["users"]
 
     def setup(self, conn) -> None:
@@ -59,30 +68,33 @@ class JoinVsSubqueryBenchmark(BenchmarkBase):
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             """)
+            # One order per user made JOIN, IN and EXISTS return identical row
+            # sets and identical plans, so the benchmark compared three
+            # spellings of the same thing. The fan-out only appears at 1:N.
             cur.execute(f"""
                 INSERT INTO {ORDERS} (user_id, amount)
-                SELECT id, (random() * 500)::DECIMAL(10,2)
-                FROM users
-                WHERE random() < 0.3
-            """)
+                SELECT u.id, (random() * 500)::DECIMAL(10,2)
+                FROM users u, generate_series(1, %s) g
+                WHERE random() < %s
+            """, (MAX_ORDERS_PER_USER, ORDER_PROBABILITY))
             cur.execute(f"CREATE INDEX ON {ORDERS}(user_id)")
             cur.execute(f"ANALYZE {ORDERS}")
             conn.commit()
 
     def run(self, conn) -> BenchmarkResult:
-        series = {QUERY_JOIN: ([], []), QUERY_SUBQUERY: ([], []), QUERY_EXISTS: ([], [])}
+        series = {QUERY_JOIN: [], QUERY_SUBQUERY: [], QUERY_EXISTS: []}
 
         with conn.cursor() as cur:
             for threshold in THRESHOLDS:
-                for query, (times, rows_fetched) in series.items():
-                    rows, elapsed = measure(cur, query, (threshold,))
-                    times.append(elapsed)
-                    rows_fetched.append(rows)
+                for query, measurements in series.items():
+                    measurements.append(measure(cur, query, (threshold,)))
 
         q1, q2, q3 = (
             QueryResult(
-                name=name, query=query.strip(),
-                times=series[query][0], limits=THRESHOLDS, rows_fetched=series[query][1],
+                name=name, query=query.strip(), limits=THRESHOLDS,
+                times=[m.wall_ms for m in series[query]],
+                rows_fetched=[m.rows_fetched for m in series[query]],
+                server_times=[m.server_ms for m in series[query]],
             )
             for name, query in (
                 ("JOIN", QUERY_JOIN),
@@ -112,10 +124,14 @@ class JoinVsSubqueryBenchmark(BenchmarkBase):
         for i, threshold in enumerate(q1.limits):
             rows.append({
                 "amount >": threshold,
-                "rows_matched": q1.rows_fetched[i],
-                "join": f"{q1.times[i]:.2f} ms",
-                "in_subquery": f"{q2.times[i]:.2f} ms",
-                "exists": f"{q3.times[i]:.2f} ms",
+                "join rows": q1.rows_fetched[i],
+                "in/exists rows": q2.rows_fetched[i],
+                "join (server)": format_ms(q1.server_times[i]),
+                "in (server)": format_ms(q2.server_times[i]),
+                "exists (server)": format_ms(q3.server_times[i]),
+                "join (total)": format_ms(q1.times[i]),
+                "in (total)": format_ms(q2.times[i]),
+                "exists (total)": format_ms(q3.times[i]),
             })
         return pd.DataFrame(rows)
 

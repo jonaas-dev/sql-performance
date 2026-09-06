@@ -12,7 +12,10 @@ from benchmarks.base import (
     BenchmarkBase,
     BenchmarkResult,
     QueryResult,
+    format_ms,
     measure,
+    plot_server_series,
+    speedup,
 )
 from benchmarks.registry import register
 
@@ -39,14 +42,11 @@ class IndexUsageBenchmark(BenchmarkBase):
             conn.commit()
 
     def run(self, conn) -> BenchmarkResult:
-        q1_times, q1_rows = [], []
-        q2_times, q2_rows = [], []
+        m1, m2 = [], []
 
         with conn.cursor() as cur:
             for age in THRESHOLDS:
-                rows, elapsed = measure(cur, QUERY, (age,))
-                q1_times.append(elapsed)
-                q1_rows.append(rows)
+                m1.append(measure(cur, QUERY, (age,)))
 
         # Captured before the index exists: running both EXPLAINs after
         # CREATE INDEX makes them identical and the "no index" label a lie.
@@ -58,19 +58,19 @@ class IndexUsageBenchmark(BenchmarkBase):
             conn.commit()
 
             for age in THRESHOLDS:
-                rows, elapsed = measure(cur, QUERY, (age,))
-                q2_times.append(elapsed)
-                q2_rows.append(rows)
+                m2.append(measure(cur, QUERY, (age,)))
 
         with_index_plan = run_explain(conn, QUERY, (EXPLAIN_AGE,))
 
         q1 = QueryResult(
-            name=NO_INDEX_LABEL, query=QUERY,
-            times=q1_times, limits=THRESHOLDS, rows_fetched=q1_rows,
+            name=NO_INDEX_LABEL, query=QUERY, limits=THRESHOLDS,
+            times=[m.wall_ms for m in m1], rows_fetched=[m.rows_fetched for m in m1],
+            server_times=[m.server_ms for m in m1],
         )
         q2 = QueryResult(
-            name=WITH_INDEX_LABEL, query=QUERY,
-            times=q2_times, limits=THRESHOLDS, rows_fetched=q2_rows,
+            name=WITH_INDEX_LABEL, query=QUERY, limits=THRESHOLDS,
+            times=[m.wall_ms for m in m2], rows_fetched=[m.rows_fetched for m in m2],
+            server_times=[m.server_ms for m in m2],
         )
 
         return BenchmarkResult(
@@ -89,13 +89,15 @@ class IndexUsageBenchmark(BenchmarkBase):
     def _build_comparison(self, q1, q2):
         rows = []
         for i, age in enumerate(q1.limits):
-            speedup = f"{q1.times[i] / q2.times[i]:.1f}x" if q2.times[i] > 0 else "N/A"
             rows.append({
                 "age =": age,
-                "rows_matched": q1.rows_fetched[i],
-                "without_index": f"{q1.times[i]:.2f} ms",
-                "with_index": f"{q2.times[i]:.2f} ms",
-                "speedup": speedup,
+                "rows": q1.rows_fetched[i],
+                "no index (total)": format_ms(q1.times[i]),
+                "no index (server)": format_ms(q1.server_times[i]),
+                "indexed (total)": format_ms(q2.times[i]),
+                "indexed (server)": format_ms(q2.server_times[i]),
+                "speedup (total)": speedup(q1.times[i], q2.times[i]),
+                "speedup (server)": speedup(q1.server_times[i], q2.server_times[i]),
             })
         return pd.DataFrame(rows)
 
@@ -103,9 +105,11 @@ class IndexUsageBenchmark(BenchmarkBase):
         fig = Figure(figsize=(10, 6))
         canvas = FigureCanvasAgg(fig)
         ax = fig.add_subplot(111)
-        ax.plot(q1.limits, q1.times, marker="o", label=q1.name, color="#e74c3c")
-        ax.plot(q2.limits, q2.times, marker="s", label=q2.name, color="#2ecc71")
-        ax.set_title(self.title)
+        ax.plot(q1.limits, q1.times, marker="o", label=f"{q1.name} — total", color="#e74c3c")
+        ax.plot(q2.limits, q2.times, marker="s", label=f"{q2.name} — total", color="#2ecc71")
+        plot_server_series(ax, q1, "#e74c3c")
+        plot_server_series(ax, q2, "#2ecc71")
+        ax.set_title(f"{self.title} — solid: total, dashed: PostgreSQL only")
         ax.set_xlabel("age = value")
         ax.set_ylabel("Median execution time (ms)")
         ax.set_xticks(q1.limits)
