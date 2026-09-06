@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 
 bp = Blueprint("main", __name__)
 
+VALID_SIZES = {"small", "medium", "large"}
+
 
 @bp.route("/")
 def landing():
@@ -20,12 +22,17 @@ def landing():
         comparison_table=None,
         benchmarks=benchmarks,
         selected_benchmark=None,
+        selected_size="medium",
     )
 
 
 @bp.route("/generate")
 def generate():
     benchmark_name = request.args.get("benchmark", "select_star")
+    size = request.args.get("size", "medium")
+
+    if size not in VALID_SIZES:
+        size = "medium"
 
     if get_benchmark(benchmark_name) is None:
         benchmarks = list_benchmarks()
@@ -35,6 +42,7 @@ def generate():
             comparison_table=None,
             benchmarks=benchmarks,
             selected_benchmark=benchmark_name,
+            selected_size=size,
             error=f"Unknown benchmark: {benchmark_name}",
         )
 
@@ -53,6 +61,7 @@ def generate():
             comparison_table=None,
             benchmarks=benchmarks,
             selected_benchmark=benchmark_name,
+            selected_size=size,
             error=str(e),
         )
 
@@ -63,6 +72,7 @@ def generate():
         comparison_table=result.comparison_table,
         benchmarks=benchmarks,
         selected_benchmark=benchmark_name,
+        selected_size=size,
         benchmark_title=result.title,
         benchmark_description=result.description,
         explain_plans=result.explain_plans or None,
