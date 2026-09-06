@@ -5,60 +5,117 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ result.title or result.benchmark }} — Historical Result</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
 </head>
-<body>
-    <div class="container mt-4">
-        <nav aria-label="breadcrumb">
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="/">
+                <i class="bi bi-database-gear me-2"></i>SQL Performance Benchmark
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/"><i class="bi bi-house me-1"></i>Home</a>
+                <a class="nav-link" href="/history"><i class="bi bi-clock-history me-1"></i>History</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container py-5">
+        <nav aria-label="breadcrumb" class="mb-4">
             <ol class="breadcrumb">
-                <li class="breadcrumb-item"><a href="/history">History</a></li>
+                <li class="breadcrumb-item"><a href="/history" class="text-decoration-none">History</a></li>
                 <li class="breadcrumb-item active">{{ result.title or result.benchmark }}</li>
             </ol>
         </nav>
 
-        <h1>{{ result.title or result.benchmark }}</h1>
-        <p class="text-muted">{{ result.description }}</p>
-        <p><small>Run at: {{ result.timestamp }} | Params: {{ result.params }}</small></p>
+        <div class="card shadow-sm mb-4 border-primary">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-bar-chart me-2"></i>{{ result.title or result.benchmark }}</h5>
+                <span class="badge bg-light text-dark">{{ result.timestamp }}</span>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-2">{{ result.description }}</p>
+                <small class="text-muted">
+                    <i class="bi bi-gear me-1"></i>Params: {{ result.params }}
+                </small>
+            </div>
+        </div>
 
         {% if plot_data %}
-        <div class="text-center">
-            <img src="data:image/png;base64,{{ plot_data }}" alt="Benchmark Results" class="img-fluid">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>Results</h5>
+            </div>
+            <div class="card-body text-center">
+                <img src="data:image/png;base64,{{ plot_data }}" alt="Benchmark Results" class="img-fluid rounded">
+            </div>
         </div>
         {% endif %}
 
         {% if comparison_table is not none %}
-        <h2 class="mt-4">Comparison Table</h2>
-        <table class="table table-striped">
-            <thead>
-                <tr>
-                    {% for col in comparison_table.columns %}
-                    <th>{{ col }}</th>
-                    {% endfor %}
-                </tr>
-            </thead>
-            <tbody>
-                {% for _, row in comparison_table.iterrows() %}
-                <tr>
-                    {% for val in row %}
-                    <td>{{ val }}</td>
-                    {% endfor %}
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-table me-2"></i>Comparison</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                {% for col in comparison_table.columns %}
+                                <th>{{ col }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for _, row in comparison_table.iterrows() %}
+                            <tr>
+                                {% for val in row %}
+                                <td>{{ val }}</td>
+                                {% endfor %}
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
         {% endif %}
 
         {% if explain_plans %}
-        <h2 class="mt-4">Query Plans</h2>
-        {% for name, plan in explain_plans.items() %}
-        <h5>{{ name }}</h5>
-        <pre class="bg-light p-3 border rounded"><code>{{ plan }}</code></pre>
-        {% endfor %}
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>EXPLAIN ANALYZE</h5>
+            </div>
+            <div class="card-body">
+                {% for name, plan in explain_plans.items() %}
+                <h6 class="text-primary">{{ name }}</h6>
+                <pre class="bg-dark text-light p-3 rounded mb-3"><code>{{ plan }}</code></pre>
+                {% endfor %}
+            </div>
+        </div>
         {% endif %}
 
-        <div class="mt-4">
-            <a href="/history" class="btn btn-secondary">Back to History</a>
-            <a href="/" class="btn btn-primary">New Benchmark</a>
+        <div class="d-flex gap-2">
+            <a href="/history" class="btn btn-secondary"><i class="bi bi-arrow-left me-1"></i>Back to History</a>
+            <a href="/" class="btn btn-primary"><i class="bi bi-plus-circle me-1"></i>New Benchmark</a>
         </div>
     </div>
+
+    <footer class="bg-dark text-light py-4 mt-5">
+        <div class="container text-center">
+            <p class="mb-1">
+                <i class="bi bi-database-gear me-1"></i>
+                SQL Performance Benchmark
+            </p>
+            <p class="mb-0 small text-muted">
+                <a href="https://github.com/jonaas-dev/sql-performance" class="text-muted">GitHub</a>
+                &middot;
+                MIT License
+                &middot;
+                Built with Flask + PostgreSQL
+            </p>
+        </div>
+    </footer>
 </body>
 </html>

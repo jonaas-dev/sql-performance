@@ -3,89 +3,188 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SQL Benchmark</title>
+    <title>SQL Performance Benchmark</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
-<body>
-    <div class="container mt-4">
-        <div class="d-flex justify-content-between align-items-center">
-            <h1>SQL Performance Benchmark</h1>
-            <a href="/history" class="btn btn-outline-secondary btn-sm">History</a>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="/">
+                <i class="bi bi-database-gear me-2"></i>SQL Performance Benchmark
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/"><i class="bi bi-house me-1"></i>Home</a>
+                <a class="nav-link" href="/history"><i class="bi bi-clock-history me-1"></i>History</a>
+            </div>
         </div>
+    </nav>
 
-        <form action="/generate" method="get" class="row g-3 my-4">
-            <div class="col-md-6">
-                <label for="benchmark" class="form-label">Select benchmark</label>
-                <select name="benchmark" id="benchmark" class="form-select">
-                    {% for bm in benchmarks %}
-                    <option value="{{ bm.name }}" {% if selected_benchmark == bm.name %}selected{% endif %}>
-                        {{ bm.title }} — {{ bm.description }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label for="size" class="form-label">Dataset size</label>
-                <select name="size" id="size" class="form-select">
-                    <option value="small" {% if selected_size == 'small' %}selected{% endif %}>Small (10K rows)</option>
-                    <option value="medium" {% if selected_size == 'medium' or not selected_size %}selected{% endif %}>Medium (100K rows)</option>
-                    <option value="large" {% if selected_size == 'large' %}selected{% endif %}>Large (1M rows)</option>
-                </select>
-            </div>
-            <div class="col-md-3 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary w-100">Generate</button>
-            </div>
-        </form>
-
-        {% if error %}
-        <div class="alert alert-danger">{{ error }}</div>
-        {% endif %}
-
-        {% if benchmark_title %}
-        <h2 class="mt-4">{{ benchmark_title }}</h2>
-        <p class="text-muted">{{ benchmark_description }}</p>
-        {% endif %}
-
-        {% if plot_data %}
-        <div class="text-center">
-            <img src="data:image/png;base64,{{ plot_data }}" alt="Benchmark Results" class="img-fluid">
-        </div>
-        {% endif %}
-
-        {% if comparison_table %}
-        <h2 class="mt-4">Comparison Table</h2>
-        <table class="table table-striped">
-            <thead>
-                <tr>
-                    {% for col in comparison_table.columns %}
-                    <th>{{ col }}</th>
-                    {% endfor %}
-                </tr>
-            </thead>
-            <tbody>
-                {% for _, row in comparison_table.iterrows() %}
-                <tr>
-                    {% for val in row %}
-                    <td>{{ val }}</td>
-                    {% endfor %}
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% endif %}
-
-        {% if explain_plans %}
-        <h2 class="mt-4">Query Plans</h2>
-        {% for name, plan in explain_plans.items() %}
-        <h5>{{ name }}</h5>
-        <pre class="bg-light p-3 border rounded"><code>{{ plan }}</code></pre>
-        {% endfor %}
-        {% endif %}
-
+    <div class="container py-5">
         {% if not plot_data and not error %}
-        <p class="text-muted text-center mt-4">Select a benchmark and click Generate to see results.</p>
+        <div class="text-center mb-5">
+            <h1 class="display-5 fw-bold">Find out why your queries are slow</h1>
+            <p class="lead text-muted">Select a benchmark, choose dataset size, and click Generate</p>
+        </div>
         {% endif %}
+
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+                <form action="/generate" method="get" class="card shadow-sm mb-4">
+                    <div class="card-body">
+                        <div class="row g-3 align-items-end">
+                            <div class="col-md-6">
+                                <label for="benchmark" class="form-label fw-semibold">
+                                    <i class="bi bi-graph-up me-1"></i>Benchmark
+                                </label>
+                                <select name="benchmark" id="benchmark" class="form-select form-select-lg">
+                                    {% for bm in benchmarks %}
+                                    <option value="{{ bm.name }}" {% if selected_benchmark == bm.name %}selected{% endif %}>
+                                        {{ bm.title }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label for="size" class="form-label fw-semibold">
+                                    <i class="bi bi-hdd-stack me-1"></i>Dataset
+                                </label>
+                                <select name="size" id="size" class="form-select form-select-lg">
+                                    <option value="small" {% if selected_size == 'small' %}selected{% endif %}>Small (10K)</option>
+                                    <option value="medium" {% if selected_size == 'medium' or not selected_size %}selected{% endif %}>Medium (100K)</option>
+                                    <option value="large" {% if selected_size == 'large' %}selected{% endif %}>Large (1M)</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <button type="submit" class="btn btn-primary btn-lg w-100" id="generate-btn">
+                                    <i class="bi bi-play-circle me-1"></i>Generate
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+
+                {% if error %}
+                <div class="alert alert-danger d-flex align-items-center" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <div>{{ error }}</div>
+                </div>
+                {% endif %}
+
+                {% if benchmark_title %}
+                <div class="card shadow-sm mb-4 border-primary">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="bi bi-bar-chart me-2"></i>{{ benchmark_title }}</h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-0">{{ benchmark_description }}</p>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if plot_data %}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>Results</h5>
+                    </div>
+                    <div class="card-body text-center">
+                        <img src="data:image/png;base64,{{ plot_data }}" alt="Benchmark Results" class="img-fluid rounded">
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if comparison_table is not none %}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-table me-2"></i>Comparison</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-dark">
+                                    <tr>
+                                        {% for col in comparison_table.columns %}
+                                        <th>{{ col }}</th>
+                                        {% endfor %}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for _, row in comparison_table.iterrows() %}
+                                    <tr>
+                                        {% for val in row %}
+                                        <td>{{ val }}</td>
+                                        {% endfor %}
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if explain_plans %}
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-white">
+                        <h5 class="mb-0"><i class="bi bi-diagram-3 me-2"></i>EXPLAIN ANALYZE</h5>
+                    </div>
+                    <div class="card-body">
+                        {% for name, plan in explain_plans.items() %}
+                        <h6 class="text-primary">{{ name }}</h6>
+                        <pre class="bg-dark text-light p-3 rounded mb-3"><code>{{ plan }}</code></pre>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if result_id %}
+                <div class="text-center mb-4">
+                    <a href="/results/{{ result_id }}" class="btn btn-outline-primary">
+                        <i class="bi bi-eye me-1"></i>View in History
+                    </a>
+                </div>
+                {% endif %}
+
+                {% if not plot_data and not error %}
+                <div class="row g-3 mt-2">
+                    {% for bm in benchmarks %}
+                    <div class="col-md-6">
+                        <div class="card h-100 border-{{ ['primary', 'success', 'warning', 'info'][loop.index0 % 4] }}">
+                            <div class="card-body">
+                                <h6 class="card-title">{{ bm.title }}</h6>
+                                <p class="card-text text-muted small">{{ bm.description }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
     </div>
+
+    <footer class="bg-dark text-light py-4 mt-5">
+        <div class="container text-center">
+            <p class="mb-1">
+                <i class="bi bi-database-gear me-1"></i>
+                SQL Performance Benchmark
+            </p>
+            <p class="mb-0 small text-muted">
+                <a href="https://github.com/jonaas-dev/sql-performance" class="text-muted">GitHub</a>
+                &middot;
+                <a href="/license" class="text-muted">MIT License</a>
+                &middot;
+                Built with Flask + PostgreSQL
+            </p>
+        </div>
+    </footer>
+
+    <script>
+    document.getElementById('generate-btn')?.addEventListener('click', function() {
+        this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running...';
+        this.disabled = true;
+    });
+    </script>
 </body>
 </html>
