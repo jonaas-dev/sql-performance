@@ -1,5 +1,11 @@
+"""Parametrized seeder for the benchmark dataset.
+
+Set-based on purpose: a row-by-row loop for the `large` dataset takes minutes,
+which is unusable from a web request. `INSERT ... SELECT generate_series` keeps
+even 1M rows in the seconds range.
+"""
 import logging
-import random
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -21,51 +27,83 @@ COUNTRIES = [
 ]
 
 SIZES = {"small": 10_000, "medium": 100_000, "large": 1_000_000}
+DEFAULT_SIZE = "medium"
+LOCK_TIMEOUT = "5s"
+
+# floor() and not a bare ::INT cast: casting a float to INT in PostgreSQL
+# *rounds*, so `(random() * 10)::INT + 1` yields 11 on a 10-element array and
+# silently produces NULLs for ~5% of the rows.
+_INSERT = """
+WITH arrays AS (
+    SELECT %(first_names)s::TEXT[] AS first_names,
+           %(last_names)s::TEXT[]  AS last_names,
+           %(cities)s::TEXT[]      AS cities,
+           %(countries)s::TEXT[]   AS countries
+)
+INSERT INTO users (name, surname, email, direction, city, country,
+                   postal_code, phone, age, bio)
+SELECT
+    a.first_names[1 + floor(random() * array_length(a.first_names, 1))::INT],
+    a.last_names[1 + floor(random() * array_length(a.last_names, 1))::INT],
+    'user' || g.i || '@example.com',
+    'Street ' || (1 + floor(random() * 100)::INT) || ', Apt ' || (1 + floor(random() * 50)::INT),
+    a.cities[1 + floor(random() * array_length(a.cities, 1))::INT],
+    a.countries[1 + floor(random() * array_length(a.countries, 1))::INT],
+    lpad((floor(random() * 90000)::INT + 10000)::TEXT, 5, '0'),
+    '+1-' || lpad((floor(random() * 900)::INT + 100)::TEXT, 3, '0')
+        || '-' || lpad((floor(random() * 900000)::INT + 100000)::TEXT, 6, '0'),
+    18 + floor(random() * 61)::INT,
+    'Bio for user ' || g.i
+FROM generate_series(1, %(n)s) AS g(i), arrays a
+"""
 
 
-def seed(conn, size: str = "medium"):
-    n = SIZES.get(size, SIZES["medium"])
+def row_count(conn) -> int:
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM users")
+        return cur.fetchone()[0]
+
+
+def resolve_size(size: str | None) -> str:
+    return size if size in SIZES else DEFAULT_SIZE
+
+
+def seed(conn, size: str = DEFAULT_SIZE) -> int:
+    """Make the users table hold exactly the number of rows for `size`.
+
+    Idempotent on the exact count so switching size in the UI actually reseeds,
+    including downwards.
+    """
+    n = SIZES[resolve_size(size)]
+
+    if row_count(conn) == n:
+        logger.info("Dataset already at %s rows, skipping seed.", n)
+        return n
 
     with conn.cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM users")
-        existing = cur.fetchone()[0]
-        if existing >= n:
-            logger.info("Database already has %s rows (>= %s), skipping seed.", existing, n)
-            return
-
+        # TRUNCATE needs ACCESS EXCLUSIVE. Without a server-side timeout a
+        # concurrent reader blocks it forever, and a client-side timeout cannot
+        # interrupt libpq waiting on the socket — it would hang the worker.
+        cur.execute("SET LOCAL lock_timeout = %s", (LOCK_TIMEOUT,))
         cur.execute("TRUNCATE users RESTART IDENTITY CASCADE")
+        cur.execute(
+            _INSERT,
+            {
+                "first_names": FIRST_NAMES,
+                "last_names": LAST_NAMES,
+                "cities": CITIES,
+                "countries": COUNTRIES,
+                "n": n,
+            },
+        )
+        cur.execute("ANALYZE users")
+    conn.commit()
 
-        for i in range(1, n + 1):
-            cur.execute(
-                """
-                INSERT INTO users (name, surname, email, direction, city, country,
-                                   postal_code, phone, age, bio)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                (
-                    random.choice(FIRST_NAMES),
-                    random.choice(LAST_NAMES),
-                    f"user{i}@example.com",
-                    f"Street {random.randint(1, 100)}, Apt {random.randint(1, 50)}",
-                    random.choice(CITIES),
-                    random.choice(COUNTRIES),
-                    f"{random.randint(10000, 99999)}",
-                    f"+1-{random.randint(100, 999)}-{random.randint(100000, 999999)}",
-                    random.randint(18, 78),
-                    f"Bio for user {i}",
-                ),
-            )
-
-            if i % 10_000 == 0:
-                conn.commit()
-                logger.info("Inserted %s/%s rows...", i, n)
-
-        conn.commit()
-        logger.info("Seeded %s rows into users table.", n)
+    logger.info("Seeded %s rows into users table.", n)
+    return n
 
 
 if __name__ == "__main__":
-    import os
     import psycopg2
 
     logging.basicConfig(
@@ -73,13 +111,12 @@ if __name__ == "__main__":
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    conn = psycopg2.connect(
+    connection = psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
         port=int(os.getenv("DB_PORT", "5432")),
         user=os.getenv("DB_USER", "user"),
         password=os.getenv("DB_PASSWORD", "password"),
         database=os.getenv("DB_NAME", "test_db"),
     )
-    size = os.getenv("DB_SEED_SIZE", "medium")
-    seed(conn, size)
-    conn.close()
+    seed(connection, os.getenv("DB_SEED_SIZE", DEFAULT_SIZE))
+    connection.close()

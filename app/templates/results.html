@@ -51,10 +51,13 @@
                                     <i class="bi bi-hdd-stack me-1"></i>Dataset
                                 </label>
                                 <select name="size" id="size" class="form-select form-select-lg">
-                                    <option value="small" {% if selected_size == 'small' %}selected{% endif %}>Small (10K)</option>
-                                    <option value="medium" {% if selected_size == 'medium' or not selected_size %}selected{% endif %}>Medium (100K)</option>
-                                    <option value="large" {% if selected_size == 'large' %}selected{% endif %}>Large (1M)</option>
+                                    {% for name, rows in sizes.items() %}
+                                    <option value="{{ name }}" {% if selected_size == name %}selected{% endif %}>
+                                        {{ name|capitalize }} ({{ '{:,}'.format(rows) }} rows)
+                                    </option>
+                                    {% endfor %}
                                 </select>
+                                <div class="form-text">Changing the size reseeds the users table.</div>
                             </div>
                             <div class="col-md-3">
                                 <button type="submit" class="btn btn-primary btn-lg w-100" id="generate-btn">

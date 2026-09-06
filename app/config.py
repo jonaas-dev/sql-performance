@@ -1,13 +1,9 @@
 import os
 from pathlib import Path
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 QUERIES_DIR = BASE_DIR / 'queries'
-TMP_DIR = BASE_DIR / 'executions_tmp'
 
-START = 1000000
-STEP = 100000
 QUERY_1_NAME = 'SELECT *'
 QUERY_2_NAME = 'SELECT id, name, email'
 
@@ -20,5 +16,4 @@ class Config:
         self.DB_PASSWORD = os.getenv('DB_PASSWORD', 'password')
         self.DB_NAME = os.getenv('DB_NAME', 'test_db')
         self.DB_SEED_SIZE = os.getenv('DB_SEED_SIZE', 'medium')
-        self.SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-change-in-prod')
         self.TESTING = False
