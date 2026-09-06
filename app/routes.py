@@ -54,7 +54,7 @@ def generate():
         finally:
             conn.close()
     except Exception as e:
-        logger.exception("Benchmark failed")
+        logger.exception("Benchmark failed: %s", e)
         benchmarks = list_benchmarks()
         return render_template(
             "results.html",
@@ -63,7 +63,7 @@ def generate():
             benchmarks=benchmarks,
             selected_benchmark=benchmark_name,
             selected_size=size,
-            error=str(e),
+            error="Database connection failed. Please check your configuration and try again.",
         )
 
     result_id = save_result(result, {"benchmark": benchmark_name, "size": size})
@@ -103,7 +103,15 @@ def history():
 def view_result(result_id):
     data = load_result(result_id)
     if data is None:
-        return render_template("history.html", results=list_results(), error="Result not found")
+        results, _ = list_results()
+        return render_template(
+            "history.html",
+            results=results,
+            error="Result not found",
+            page=1,
+            total_pages=1,
+            total=len(results),
+        )
 
     return render_template(
         "view_result.html",

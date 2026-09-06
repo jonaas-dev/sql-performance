@@ -35,22 +35,22 @@ class PaginationBenchmark(BenchmarkBase):
             for page_size in page_sizes:
                 offset = 500000
 
-                query_offset = f"SELECT * FROM users ORDER BY id LIMIT {page_size} OFFSET {offset}"
-                rows, t1 = self._measure(query_offset, cur)
+                query_offset = "SELECT * FROM users ORDER BY id LIMIT %s OFFSET %s"
+                rows, t1 = self._measure(query_offset, cur, (page_size, offset))
                 q1_times.append(t1)
                 q1_rows.append(rows)
 
-                query_keyset = f"SELECT * FROM users WHERE id > {offset} ORDER BY id LIMIT {page_size}"
-                rows, t2 = self._measure(query_keyset, cur)
+                query_keyset = "SELECT * FROM users WHERE id > %s ORDER BY id LIMIT %s"
+                rows, t2 = self._measure(query_keyset, cur, (offset, page_size))
                 q2_times.append(t2)
                 q2_rows.append(rows)
 
         q1 = QueryResult(
-            name="OFFSET", query=f"SELECT * FROM users ORDER BY id LIMIT 100 OFFSET 500000",
+            name="OFFSET", query="SELECT * FROM users ORDER BY id LIMIT %s OFFSET %s",
             times=q1_times, limits=page_sizes, rows_fetched=q1_rows,
         )
         q2 = QueryResult(
-            name="Keyset (WHERE id >)", query=f"SELECT * FROM users WHERE id > 500000 ORDER BY id LIMIT 100",
+            name="Keyset (WHERE id >)", query="SELECT * FROM users WHERE id > %s ORDER BY id LIMIT %s",
             times=q2_times, limits=page_sizes, rows_fetched=q2_rows,
         )
 
@@ -58,8 +58,8 @@ class PaginationBenchmark(BenchmarkBase):
         plot = self._build_plot(q1, q2)
 
         explain_plans = {
-            q1.name: run_explain(conn, f"SELECT * FROM users ORDER BY id LIMIT 100 OFFSET 500000"),
-            q2.name: run_explain(conn, f"SELECT * FROM users WHERE id > 500000 ORDER BY id LIMIT 100"),
+            q1.name: run_explain(conn, "SELECT * FROM users ORDER BY id LIMIT %s OFFSET %s", (100, 500000)),
+            q2.name: run_explain(conn, "SELECT * FROM users WHERE id > %s ORDER BY id LIMIT %s", (500000, 100)),
         }
 
         return BenchmarkResult(
@@ -73,9 +73,9 @@ class PaginationBenchmark(BenchmarkBase):
             cur.execute("DROP INDEX IF EXISTS idx_users_id_cursor")
             conn.commit()
 
-    def _measure(self, query, cursor):
+    def _measure(self, query, cursor, params=None):
         start = time.perf_counter()
-        cursor.execute(query)
+        cursor.execute(query, params)
         rows = cursor.fetchall()
         elapsed = (time.perf_counter() - start) * 1000
         return len(rows), elapsed

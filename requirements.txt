@@ -1,5 +1,5 @@
-psycopg2-binary
-flask
-gunicorn
-matplotlib
-pandas
+psycopg2-binary==2.9.9
+flask==3.0.3
+gunicorn==23.0.0
+matplotlib==3.9.2
+pandas==2.2.2
