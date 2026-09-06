@@ -11,10 +11,13 @@ from app.benchmark import run_explain
 from benchmarks.base import (
     BenchmarkBase,
     BenchmarkResult,
+    CostCentre,
     QueryResult,
+    Takeaway,
     format_ms,
     measure,
     plot_server_series,
+    ratio,
     speedup,
 )
 from benchmarks.registry import register
@@ -79,6 +82,41 @@ class IndexUsageBenchmark(BenchmarkBase):
             comparison_table=self._build_comparison(q1, q2),
             plot_buffer=self._build_plot(q1, q2),
             explain_plans={q1.name: no_index_plan, q2.name: with_index_plan},
+            takeaway=self._takeaway(q1, q2),
+        )
+
+    def _takeaway(self, q1: QueryResult, q2: QueryResult) -> Takeaway:
+        i = len(q1.limits) // 2
+        rows = q1.rows_fetched[i]
+        total = ratio(q1.times[i], q2.times[i])
+        server = ratio(q1.server_times[i], q2.server_times[i])
+
+        points = [
+            f"Both queries return the same {rows:,} rows; only the index differs.",
+            f"Inside PostgreSQL: {format_ms(q1.server_times[i])} -> "
+            f"{format_ms(q2.server_times[i])}" + (f" ({server:.1f}x faster)." if server else "."),
+            f"End to end: {format_ms(q1.times[i])} -> {format_ms(q2.times[i])}"
+            + (f" (only {total:.1f}x faster)." if total else "."),
+        ]
+        if server and total and server > total:
+            points.append(
+                f"The index is worth {server:.1f}x to the database but the request only sees "
+                f"{total:.1f}x, because shipping {rows:,} wide rows costs the same however "
+                "they were found."
+            )
+
+        return Takeaway(
+            verdict=(
+                f"The index made PostgreSQL {server:.1f}x faster, but the request only {total:.1f}x"
+                if server and total else "The index sped up the scan"
+            ),
+            cost_centre=CostCentre.TRANSFER,
+            points=points,
+            advice=(
+                "An index speeds up *finding* rows, never *sending* them. Indexing the filter is "
+                "the right move, but as long as you SELECT * the transfer cost caps what you can "
+                "win. Narrow the projection and the index gain reaches the caller."
+            ),
         )
 
     def teardown(self, conn) -> None:

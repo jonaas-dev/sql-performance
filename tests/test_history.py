@@ -94,3 +94,24 @@ def test_save_result_does_not_overwrite_a_run_from_the_same_second(tmp_path, mon
     assert first != second
     _, total = list_results()
     assert total == 2
+
+
+def test_saved_result_keeps_the_conclusion_for_the_history_view(tmp_path, monkeypatch):
+    """A stored run that lost its takeaway is just a chart again."""
+    from benchmarks.base import CostCentre, Takeaway
+
+    monkeypatch.setattr("app.history.RESULTS_DIR", tmp_path)
+    result = _make_result()
+    result.takeaway = Takeaway(
+        verdict="Asking for every column cost 5.2x more",
+        cost_centre=CostCentre.CLIENT,
+        points=["98% of the time is outside PostgreSQL"],
+        advice="Select the columns you need.",
+    )
+
+    loaded = load_result(save_result(result, {"size": "small"}))
+
+    assert loaded["takeaway"]["verdict"] == "Asking for every column cost 5.2x more"
+    assert loaded["takeaway"]["cost_centre"]["label"] == "the client"
+    assert loaded["takeaway"]["points"] == ["98% of the time is outside PostgreSQL"]
+    assert loaded["takeaway"]["advice"] == "Select the columns you need."

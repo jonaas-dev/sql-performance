@@ -11,10 +11,14 @@ from benchmarks.base import (
     BenchmarkBase,
     BenchmarkNotApplicable,
     BenchmarkResult,
+    CostCentre,
     QueryResult,
+    Takeaway,
     format_ms,
     measure,
+    percent,
     plot_server_series,
+    ratio,
     speedup,
     table_row_count,
 )
@@ -74,6 +78,50 @@ class SelectStarBenchmark(BenchmarkBase):
             queries=[q1, q2],
             comparison_table=self._build_comparison(q1, q2),
             plot_buffer=self._build_plot(q1, q2),
+            takeaway=self._takeaway(q1, q2),
+        )
+
+    def _takeaway(self, q1: QueryResult, q2: QueryResult) -> Takeaway:
+        i = len(q1.limits) // 2
+        rows = q1.rows_fetched[i]
+        total = ratio(q1.times[i], q2.times[i])
+        server = ratio(q1.server_times[i], q2.server_times[i])
+        client_share = None
+        if q1.server_times[i] is not None and q1.times[i] > 0:
+            client_share = (q1.times[i] - q1.server_times[i]) / q1.times[i]
+
+        points = [
+            f"Same {rows:,} rows either way — the only difference is 16 columns vs 3.",
+            f"Total time: {format_ms(q1.times[i])} vs {format_ms(q2.times[i])}"
+            + (f" ({total:.1f}x)." if total else "."),
+            f"Inside PostgreSQL: {format_ms(q1.server_times[i])} vs "
+            f"{format_ms(q2.server_times[i])}"
+            + (f" ({server:.1f}x)." if server else "."),
+        ]
+        if client_share is not None:
+            points.append(
+                f"{percent(client_share)} of the SELECT * time is spent outside the database, "
+                "in transfer and in the driver building Python objects."
+            )
+        if server is not None and server < 1:
+            points.append(
+                "PostgreSQL is actually *faster* for SELECT *: returning the stored row needs "
+                "no projection work, while picking 3 columns means building a new one."
+            )
+
+        return Takeaway(
+            verdict=(
+                f"Asking for every column cost {total:.1f}x more time for exactly the same rows"
+                if total else "Asking for every column cost more time for the same rows"
+            ),
+            cost_centre=CostCentre.CLIENT,
+            points=points,
+            advice=(
+                "The database was never the bottleneck here — your serializer is. Every column you "
+                "select has to be decoded into an object and, in a real service, serialized again "
+                "to JSON and pushed to the frontend. That bill is paid by your API process and by "
+                "whoever is waiting on the other end, so select the columns you need and no more."
+            ),
         )
 
     def _build_comparison(self, q1: QueryResult, q2: QueryResult) -> pd.DataFrame:

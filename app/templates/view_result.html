@@ -41,6 +41,36 @@
             </div>
         </div>
 
+        {% if takeaway %}
+        <div class="card shadow-sm mb-4 border-success">
+            <div class="card-header bg-success text-white d-flex align-items-center">
+                <i class="bi bi-lightbulb me-2"></i>
+                <h5 class="mb-0">What this tells you</h5>
+            </div>
+            <div class="card-body">
+                <p class="fs-5 fw-semibold mb-3">{{ takeaway.verdict }}.</p>
+
+                <div class="mb-3">
+                    <span class="badge bg-dark me-2">Cost paid by</span>
+                    <strong>{{ takeaway.cost_centre.label }}</strong>
+                    <div class="text-muted small mt-1">{{ takeaway.cost_centre.description }}</div>
+                </div>
+
+                <ul class="mb-3">
+                    {% for point in takeaway.points %}
+                    <li class="mb-1">{{ point }}</li>
+                    {% endfor %}
+                </ul>
+
+                {% if takeaway.advice %}
+                <div class="alert alert-light border mb-0">
+                    <i class="bi bi-arrow-right-circle me-1"></i>{{ takeaway.advice }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
         {% if plot_data %}
         <div class="card shadow-sm mb-4">
             <div class="card-header bg-white">

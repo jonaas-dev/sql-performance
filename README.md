@@ -29,6 +29,24 @@ vs `EXISTS`). This tool runs the queries, times them, and shows the query plan b
 
 ---
 
+## What you'll learn
+
+Every benchmark ends with a conclusion the tool derives from the run it just did — never a
+hand-written blurb, so it cannot drift away from the numbers above it. The point of each one is to
+show **where the cost is actually paid**, because that is what decides the fix:
+
+| Benchmark | The lesson | Who pays |
+|---|---|---|
+| **SELECT \* vs columns** | You are not straining the database, you are straining your serializer. Fetching 16 columns instead of 3 costs ~5x end to end while PostgreSQL's own time barely moves — the bill is decoding rows into objects and, in a real service, re-serializing them to JSON. | **The client** — your API process and the frontend waiting on it |
+| **Index usage** | An index speeds up *finding* rows, never *sending* them. The same index is worth ~8x to PostgreSQL but only ~2x to the caller, because `SELECT *` ships the same wide rows either way. | **The result set** |
+| **OFFSET vs keyset** | This one really *is* the database's problem. `OFFSET 100000` makes PostgreSQL walk and discard 100,000 rows to return 100. No client tuning helps; only changing the query does. | **PostgreSQL** |
+| **JOIN vs IN vs EXISTS** | They do not answer the same question. `JOIN` emits one row per child, `IN`/`EXISTS` one row per parent — 2.4x more data for the same users. Choose by the shape you need, not by a stopwatch. | **The result set** |
+
+Read together they make one point: *"the query is slow"* is not a diagnosis. The same symptom has a
+different cure depending on whether the time is going to the planner, the wire, or your driver.
+
+---
+
 ## How the measurements work
 
 The numbers are only worth something if the method is. This is what the tool does on every data point:
@@ -328,9 +346,15 @@ class CityFilterBenchmark(BenchmarkBase):
 | `required_tables` | `list[str]` | Enforced by `check_requirements()` |
 
 `BenchmarkResult` carries `queries` (a list of `QueryResult`), a `comparison_table` DataFrame, a
-`plot_buffer` PNG, and optionally `explain_plans`. When `explain_plans` is empty the runner collects
+`plot_buffer` PNG, a `takeaway`, and optionally `explain_plans`. When `explain_plans` is empty the runner collects
 them automatically — supply them yourself when the plan must be captured at a specific moment, as
 `index_usage` does.
+
+**End with a conclusion.** Set `takeaway=` on your `BenchmarkResult`: a `Takeaway` carries a
+`verdict`, a `CostCentre` (`DATABASE`, `CLIENT` or `TRANSFER`), the `points` of evidence behind it
+and the `advice` that follows. Build every number in it from the measurements you just took — a
+takeaway that repeats a number the chart does not show is how a benchmark starts lying. It refuses
+to be constructed without evidence, on purpose.
 
 **Helpers worth using:** `measure(cursor, query, params)` returns a `Measurement` with
 `rows_fetched`, `wall_ms`, `server_ms` and a `client_share` property, doing the warm-up, the median

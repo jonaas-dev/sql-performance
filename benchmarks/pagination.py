@@ -12,9 +12,12 @@ from benchmarks.base import (
     BenchmarkBase,
     BenchmarkNotApplicable,
     BenchmarkResult,
+    CostCentre,
     QueryResult,
+    Takeaway,
     format_ms,
     measure,
+    ratio,
     speedup,
     table_row_count,
 )
@@ -81,6 +84,43 @@ class PaginationBenchmark(BenchmarkBase):
                 q1.name: run_explain(conn, QUERY_OFFSET, (PAGE_SIZE, deepest)),
                 q2.name: run_explain(conn, QUERY_KEYSET, (deepest, PAGE_SIZE)),
             },
+            takeaway=self._takeaway(q1, q2),
+        )
+
+    def _takeaway(self, q1: QueryResult, q2: QueryResult) -> Takeaway:
+        last = -1
+        page = q1.limits[last] // PAGE_SIZE + 1
+        server = ratio(q1.server_times[last], q2.server_times[last])
+        first_server = q1.server_times[0]
+        deep_server = q1.server_times[last]
+
+        points = [
+            f"Every point returns one page of {PAGE_SIZE} rows, so the amount of data sent "
+            "back is identical throughout — only the depth changes.",
+            f"OFFSET grows with depth: {format_ms(first_server)} on page 1, "
+            f"{format_ms(deep_server)} on page {page:,}.",
+            f"Keyset does not: {format_ms(q2.server_times[0])} on page 1, "
+            f"{format_ms(q2.server_times[last])} on page {page:,}.",
+        ]
+        if server:
+            points.append(
+                f"At page {page:,} that is {server:.0f}x more database time for identical output."
+            )
+
+        return Takeaway(
+            verdict=(
+                f"By page {page:,}, OFFSET makes PostgreSQL do {server:.0f}x more work "
+                f"to return the same {PAGE_SIZE} rows"
+                if server else "OFFSET degrades with page depth while keyset stays flat"
+            ),
+            cost_centre=CostCentre.DATABASE,
+            points=points,
+            advice=(
+                "Unlike SELECT *, this one really is the database's problem: OFFSET has to walk "
+                "and discard every row it skips, so page 1,000 costs a thousand pages of work. "
+                "Keyset pagination asks the index to jump straight to the last id you saw. "
+                "Trading OFFSET for a WHERE id > ? is the fix — no amount of client tuning helps."
+            ),
         )
 
     def _build_comparison(self, q1, q2):
