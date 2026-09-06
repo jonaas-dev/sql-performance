@@ -4,7 +4,6 @@ from pathlib import Path
 
 from benchmarks.base import BenchmarkBase
 
-
 _registry: dict[str, BenchmarkBase] = {}
 
 
