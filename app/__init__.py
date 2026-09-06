@@ -1,4 +1,6 @@
 import logging
+import matplotlib
+matplotlib.use("Agg")
 
 from flask import Flask
 
