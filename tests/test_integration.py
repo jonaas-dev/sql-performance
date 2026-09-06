@@ -45,7 +45,7 @@ def test_seed_leaves_no_null_values_in_generated_columns(conn):
     with conn.cursor() as cur:
         cur.execute(
             "SELECT count(*) FROM users "
-            "WHERE name IS NULL OR surname IS NULL "
+            "WHERE name IS NULL OR surname IS NULL OR address IS NULL "
             "OR city IS NULL OR country IS NULL"
         )
         assert cur.fetchone()[0] == 0
