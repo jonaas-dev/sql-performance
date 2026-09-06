@@ -1,7 +1,9 @@
 import io
 import json
+
 import pandas as pd
-from app.history import save_result, list_results, load_result, RESULTS_DIR
+
+from app.history import list_results, load_result, save_result
 from benchmarks.base import BenchmarkResult, QueryResult
 
 
@@ -71,3 +73,24 @@ def test_load_result_not_found(tmp_path, monkeypatch):
     monkeypatch.setattr("app.history.RESULTS_DIR", tmp_path)
     loaded = load_result("nonexistent")
     assert loaded is None
+
+
+def test_load_result_rejects_ids_that_escape_the_results_directory(tmp_path, monkeypatch):
+    """result_id comes straight from the URL and is used to build a path."""
+    monkeypatch.setattr("app.history.RESULTS_DIR", tmp_path)
+    (tmp_path.parent / "metadata.json").write_text('{"secret": true}')
+
+    assert load_result("..") is None
+    assert load_result("../") is None
+    assert load_result("/etc") is None
+
+
+def test_save_result_does_not_overwrite_a_run_from_the_same_second(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.history.RESULTS_DIR", tmp_path)
+
+    first = save_result(_make_result(), {"size": "small"})
+    second = save_result(_make_result(), {"size": "small"})
+
+    assert first != second
+    _, total = list_results()
+    assert total == 2

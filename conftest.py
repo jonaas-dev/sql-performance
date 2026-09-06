@@ -1,5 +1,7 @@
 import os
+
 import pytest
+
 from app import create_app
 from app.config import Config
 
@@ -10,8 +12,8 @@ class TestConfig(Config):
         self.TESTING = True
         self.DB_HOST = os.getenv('TEST_DB_HOST', 'localhost')
         self.DB_PORT = int(os.getenv('TEST_DB_PORT', '5432'))
-        self.DB_USER = os.getenv('TEST_DB_USER', 'test')
-        self.DB_PASSWORD = os.getenv('TEST_DB_PASSWORD', 'test')
+        self.DB_USER = os.getenv('TEST_DB_USER', 'user')
+        self.DB_PASSWORD = os.getenv('TEST_DB_PASSWORD', 'password')
         self.DB_NAME = os.getenv('TEST_DB_NAME', 'test_db')
 
 

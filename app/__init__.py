@@ -1,6 +1,8 @@
 import logging
 import os
+
 import matplotlib
+
 matplotlib.use("Agg")
 
 from flask import Flask
@@ -18,22 +20,12 @@ def create_app(config_class=None):
     else:
         config = config_class
 
-    app.config['DB_HOST'] = config.DB_HOST
-    app.config['DB_PORT'] = config.DB_PORT
-    app.config['DB_USER'] = config.DB_USER
-    app.config['DB_PASSWORD'] = config.DB_PASSWORD
-    app.config['DB_NAME'] = config.DB_NAME
-    app.config['SECRET_KEY'] = config.SECRET_KEY
-    app.config['TESTING'] = getattr(config, 'TESTING', False)
+    app.config["DB_CONFIG"] = config
+    app.config["TESTING"] = getattr(config, "TESTING", False)
 
-    app._db_config = config
-
-    log_level = getattr(
-        logging, os.getenv('LOG_LEVEL', 'INFO').upper(), logging.INFO
-    )
     logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
     from app.routes import bp

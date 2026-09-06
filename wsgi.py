@@ -1,6 +1,7 @@
 import os
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 from app import create_app
