@@ -4,21 +4,45 @@ from unittest.mock import MagicMock, patch
 from benchmarks.base import BenchmarkResult, QueryResult
 from benchmarks.registry import all, get, default, _registry
 from benchmarks.select_star import SelectStarBenchmark
+from benchmarks.index_usage import IndexUsageBenchmark
+from benchmarks.join_vs_subquery import JoinVsSubqueryBenchmark
+from benchmarks.pagination import PaginationBenchmark
 from app.benchmark import run_benchmark, result_to_plot_data, list_benchmarks
 from app.config import QUERIES_DIR
 
 
 def test_registry_discovery():
     benchmarks = all()
-    assert len(benchmarks) >= 1
+    assert len(benchmarks) >= 4
     names = [b.name for b in benchmarks]
     assert "select_star" in names
+    assert "index_usage" in names
+    assert "join_vs_subquery" in names
+    assert "pagination" in names
 
 
 def test_registry_get():
     bm = get("select_star")
     assert bm is not None
     assert isinstance(bm, SelectStarBenchmark)
+
+
+def test_registry_get_index_usage():
+    bm = get("index_usage")
+    assert bm is not None
+    assert isinstance(bm, IndexUsageBenchmark)
+
+
+def test_registry_get_join_vs_subquery():
+    bm = get("join_vs_subquery")
+    assert bm is not None
+    assert isinstance(bm, JoinVsSubqueryBenchmark)
+
+
+def test_registry_get_pagination():
+    bm = get("pagination")
+    assert bm is not None
+    assert isinstance(bm, PaginationBenchmark)
 
 
 def test_registry_get_unknown():
@@ -38,10 +62,28 @@ def test_select_star_metadata():
     assert len(bm.required_tables) > 0
 
 
+def test_index_usage_metadata():
+    bm = IndexUsageBenchmark()
+    assert bm.name == "index_usage"
+    assert "index" in bm.title.lower()
+
+
+def test_join_vs_subquery_metadata():
+    bm = JoinVsSubqueryBenchmark()
+    assert bm.name == "join_vs_subquery"
+    assert "JOIN" in bm.title
+
+
+def test_pagination_metadata():
+    bm = PaginationBenchmark()
+    assert bm.name == "pagination"
+    assert "OFFSET" in bm.title
+
+
 def test_list_benchmarks():
     result = list_benchmarks()
     assert isinstance(result, list)
-    assert len(result) >= 1
+    assert len(result) >= 4
     assert "name" in result[0]
     assert "title" in result[0]
     assert "description" in result[0]
@@ -88,4 +130,38 @@ def test_select_star_build_plot():
 
     assert isinstance(buf, io.BytesIO)
     assert len(buf.getvalue()) > 0
+    assert buf.getvalue()[:4] == b"\x89PNG"
+
+
+def test_index_usage_build_plot():
+    bm = IndexUsageBenchmark()
+    q1 = QueryResult(name="No idx", query="SELECT 1", times=[10.0, 5.0], limits=[20, 30], rows_fetched=[1000, 500])
+    q2 = QueryResult(name="Idx", query="SELECT 2", times=[2.0, 1.0], limits=[20, 30], rows_fetched=[1000, 500])
+
+    buf = bm._build_plot(q1, q2)
+
+    assert isinstance(buf, io.BytesIO)
+    assert buf.getvalue()[:4] == b"\x89PNG"
+
+
+def test_join_vs_subquery_build_plot():
+    bm = JoinVsSubqueryBenchmark()
+    q1 = QueryResult(name="JOIN", query="SELECT 1", times=[10.0], limits=[50], rows_fetched=[100])
+    q2 = QueryResult(name="IN", query="SELECT 2", times=[8.0], limits=[50], rows_fetched=[100])
+    q3 = QueryResult(name="EXISTS", query="SELECT 3", times=[9.0], limits=[50], rows_fetched=[100])
+
+    buf = bm._build_plot(q1, q2, q3)
+
+    assert isinstance(buf, io.BytesIO)
+    assert buf.getvalue()[:4] == b"\x89PNG"
+
+
+def test_pagination_build_plot():
+    bm = PaginationBenchmark()
+    q1 = QueryResult(name="OFFSET", query="SELECT 1", times=[10.0], limits=[100], rows_fetched=[100])
+    q2 = QueryResult(name="Keyset", query="SELECT 2", times=[2.0], limits=[100], rows_fetched=[100])
+
+    buf = bm._build_plot(q1, q2)
+
+    assert isinstance(buf, io.BytesIO)
     assert buf.getvalue()[:4] == b"\x89PNG"
