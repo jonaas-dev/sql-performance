@@ -17,9 +17,15 @@
 
 A toolkit for **detecting and understanding SQL performance problems** — not just measuring them.
 
-Every query has a cost. Some are obvious (SELECT * on a wide table), some are subtle (OFFSET pagination that degrades under load), and some depend on context (JOIN vs subquery vs EXISTS). This tool runs real benchmarks against PostgreSQL, measures the actual impact, and shows you **why** one approach is faster with `EXPLAIN ANALYZE`.
+Every query has a cost. Some are obvious (`SELECT *` on a wide table), some are subtle (`OFFSET` pagination that degrades under load), and some depend on context (`JOIN` vs `subquery` vs `EXISTS`). This tool runs real benchmarks against PostgreSQL, measures the actual impact, and shows you **why** one approach is faster with `EXPLAIN ANALYZE`.
 
 **Built for developers who want data, not opinions.**
+
+<p align="center">
+  <img src="app/img/screenshot_landing.png" alt="Landing page" width="800">
+  <br>
+  <em>Choose a benchmark, select dataset size, and click Generate</em>
+</p>
 
 ---
 
@@ -29,7 +35,7 @@ The toolkit includes several built-in benchmarks that demonstrate common perform
 
 ---
 
-### SELECT * vs SELECT columns
+### 📊 SELECT * vs SELECT columns
 
 > *The most common performance trap*
 
@@ -43,11 +49,15 @@ SELECT id, name, email FROM users LIMIT 1000000;
 
 **Why it matters**: Every extra column adds I/O, memory, and network overhead. On a table with 16 columns and 1M rows, `SELECT *` transfers **16x more data** than selecting specific columns.
 
-**Typical result**: `SELECT *` is **5-10x slower** on wide tables. The gap grows with table width.
+<p align="center">
+  <img src="app/img/screenshot_select_star.png" alt="SELECT * vs columns benchmark" width="800">
+  <br>
+  <em>Chart shows execution time comparison with EXPLAIN ANALYZE output</em>
+</p>
 
 ---
 
-### Index usage
+### ⚡ Index usage
 
 > *Why B-tree indexes are not optional*
 
@@ -61,11 +71,15 @@ SELECT * FROM users WHERE age > 30;
 
 **Why it matters**: Without an index, PostgreSQL reads **every row** in the table. With a B-tree index on the filtered column, it jumps directly to matching rows.
 
-**Typical result**: Indexes speed up filtered queries **100x+**. The larger the table, the bigger the impact.
+<p align="center">
+  <img src="app/img/screenshot_index_usage.png" alt="Index usage benchmark" width="800">
+  <br>
+  <em>Red line: without index (Seq Scan). Green line: with B-tree index (Index Scan)</em>
+</p>
 
 ---
 
-### JOIN vs subquery vs EXISTS
+### 🔗 JOIN vs subquery vs EXISTS
 
 > *Three ways to filter related data*
 
@@ -86,9 +100,15 @@ WHERE EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id AND o.amount > 100);
 
 **Why it matters**: Each pattern has different performance characteristics depending on data distribution, indexes, and result set size. There is no universal "fastest" — only fastest **for your case**.
 
+<p align="center">
+  <img src="app/img/screenshot_join.png" alt="JOIN vs subquery benchmark" width="800">
+  <br>
+  <em>Three patterns compared across different filtering thresholds</em>
+</p>
+
 ---
 
-### OFFSET vs keyset pagination
+### 📄 OFFSET vs keyset pagination
 
 > *Why `OFFSET 500000` is slow*
 
@@ -101,6 +121,24 @@ SELECT * FROM users WHERE id > 500000 ORDER BY id LIMIT 10;
 ```
 
 **Why it matters**: OFFSET pagination degrades linearly with page number. At page 50,000, PostgreSQL reads 500K rows just to discard them. Keyset pagination stays **constant** regardless of position.
+
+<p align="center">
+  <img src="app/img/screenshot_pagination.png" alt="Pagination benchmark" width="800">
+  <br>
+  <em>Red: OFFSET degrades. Green: Keyset stays constant</em>
+</p>
+
+---
+
+### 📜 Historical results
+
+Every benchmark run is saved with timestamp. Compare results over time via the `/history` endpoint.
+
+<p align="center">
+  <img src="app/img/screenshot_history.png" alt="History page" width="800">
+  <br>
+  <em>All benchmark runs saved for comparison</em>
+</p>
 
 ---
 
@@ -165,8 +203,17 @@ The plugin architecture makes it easy to add new benchmarks. Here's the full pro
 Create a new `.py` file in `benchmarks/` (e.g., `benchmarks/deadlock_demo.py`):
 
 ```python
+import time
+import io
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+import pandas as pd
+
 from benchmarks.base import BenchmarkBase, BenchmarkResult, QueryResult
 from benchmarks.registry import register
+
 
 @register
 class DeadlockDemo(BenchmarkBase):
@@ -178,71 +225,59 @@ class DeadlockDemo(BenchmarkBase):
     def setup(self, conn) -> None:
         """Create indexes, temp tables, or test data before the benchmark."""
         with conn.cursor() as cur:
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_users_city ON users(city)")
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_users_city ON users(city)"
+            )
+            conn.commit()
 
     def run(self, conn) -> BenchmarkResult:
         """Execute queries, measure times, build results."""
-        import time
-        import pandas as pd
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        from io import BytesIO
-
-        queries = []
         cities = ["New York", "London", "Tokyo", "Berlin", "Sydney"]
-
-        # Measure each city filter
         times = []
-        for city in cities:
-            start = time.perf_counter()
-            with conn.cursor() as cur:
+
+        with conn.cursor() as cur:
+            for city in cities:
+                start = time.perf_counter()
                 cur.execute("SELECT * FROM users WHERE city = %s", (city,))
                 cur.fetchall()
-            elapsed = (time.perf_counter() - start) * 1000
-            times.append(elapsed)
+                elapsed = (time.perf_counter() - start) * 1000
+                times.append(elapsed)
 
-        queries.append(QueryResult(
+        queries = [QueryResult(
             name="Filter by city",
             query="SELECT * FROM users WHERE city = %s",
-            times=times,
-            limits=cities,
-            rows_fetched=1000,
-        ))
+            times=times, limits=cities, rows_fetched=1000,
+        )]
 
-        # Build comparison table
         comparison = pd.DataFrame({
             "city": cities,
             "time_ms": [round(t, 2) for t in times],
         })
 
-        # Build plot
-        fig, ax = plt.subplots(figsize=(8, 5))
+        fig = Figure(figsize=(8, 5))
+        canvas = FigureCanvasAgg(fig)
+        ax = fig.add_subplot(111)
         ax.plot(cities, times, marker="o")
         ax.set_xlabel("City")
         ax.set_ylabel("Time (ms)")
         ax.set_title("Deadlock Demo")
         ax.grid(True, alpha=0.3)
 
-        buf = BytesIO()
-        fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-        plt.close(fig)
+        buf = io.BytesIO()
+        canvas.print_png(buf)
         buf.seek(0)
 
         return BenchmarkResult(
-            name=self.name,
-            title=self.title,
-            description=self.description,
-            queries=queries,
-            comparison_table=comparison,
-            plot_buffer=buf,
-            explain_plans={},
+            name=self.name, title=self.title, description=self.description,
+            queries=queries, comparison_table=comparison,
+            plot_buffer=buf, explain_plans={},
         )
 
     def teardown(self, conn) -> None:
         """Clean up any created objects."""
         with conn.cursor() as cur:
             cur.execute("DROP INDEX IF EXISTS idx_users_city")
+            conn.commit()
 ```
 
 ### Step 2: That's it

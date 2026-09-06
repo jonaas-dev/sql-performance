@@ -1,6 +1,9 @@
 import time
 import io
-import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("Agg")
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 import pandas as pd
 
 from benchmarks.base import BenchmarkBase, BenchmarkResult, QueryResult
@@ -30,6 +33,7 @@ class SelectStarBenchmark(BenchmarkBase):
         TMP_DIR.mkdir(parents=True, exist_ok=True)
 
     def run(self, conn) -> BenchmarkResult:
+        matplotlib.use("Agg", force=True)
         limits = list(range(START, 0, -STEP))
         query_1 = self._get_query("query_1.sql")
         query_2 = self._get_query("query_2.sql")
@@ -76,19 +80,20 @@ class SelectStarBenchmark(BenchmarkBase):
         return pd.DataFrame(rows)
 
     def _build_plot(self, q1: QueryResult, q2: QueryResult) -> io.BytesIO:
-        plt.figure(figsize=(10, 6))
-        plt.plot(q1.limits, q1.times, marker="o", label=q1.name)
-        plt.plot(q2.limits, q2.times, marker="s", label=q2.name)
-        plt.title(self.title)
-        plt.xlabel("LIMIT")
-        plt.ylabel("Execution Time (ms)")
-        plt.xticks(q1.limits)
-        plt.grid(True, linestyle="--", alpha=0.6)
-        plt.legend()
-        plt.tight_layout()
+        fig = Figure(figsize=(10, 6))
+        canvas = FigureCanvasAgg(fig)
+        ax = fig.add_subplot(111)
+        ax.plot(q1.limits, q1.times, marker="o", label=q1.name)
+        ax.plot(q2.limits, q2.times, marker="s", label=q2.name)
+        ax.set_title(self.title)
+        ax.set_xlabel("LIMIT")
+        ax.set_ylabel("Execution Time (ms)")
+        ax.set_xticks(q1.limits)
+        ax.grid(True, linestyle="--", alpha=0.6)
+        ax.legend()
+        fig.tight_layout()
 
         buf = io.BytesIO()
-        plt.savefig(buf, format="png")
+        canvas.print_png(buf)
         buf.seek(0)
-        plt.close()
         return buf
