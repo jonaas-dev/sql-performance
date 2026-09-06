@@ -1,4 +1,5 @@
 executions_tmp/*.csv
+results/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
