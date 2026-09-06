@@ -1,5 +1,6 @@
 executions_tmp/*.csv
 results/
+app/img/test_*.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

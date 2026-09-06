@@ -1,4 +1,5 @@
 import logging
+import os
 import matplotlib
 matplotlib.use("Agg")
 
@@ -27,8 +28,11 @@ def create_app(config_class=None):
 
     app._db_config = config
 
+    log_level = getattr(
+        logging, os.getenv('LOG_LEVEL', 'INFO').upper(), logging.INFO
+    )
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=log_level,
         format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
     )
 

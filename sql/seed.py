@@ -1,4 +1,7 @@
+import logging
 import random
+
+logger = logging.getLogger(__name__)
 
 FIRST_NAMES = [
     "John", "Jane", "Alice", "Bob", "Charlie", "Emily", "Daniel",
@@ -27,7 +30,7 @@ def seed(conn, size: str = "medium"):
         cur.execute("SELECT COUNT(*) FROM users")
         existing = cur.fetchone()[0]
         if existing >= n:
-            print(f"Database already has {existing} rows (>= {n}), skipping seed.")
+            logger.info("Database already has %s rows (>= %s), skipping seed.", existing, n)
             return
 
         cur.execute("TRUNCATE users RESTART IDENTITY CASCADE")
@@ -55,10 +58,10 @@ def seed(conn, size: str = "medium"):
 
             if i % 10_000 == 0:
                 conn.commit()
-                print(f"  Inserted {i}/{n} rows...")
+                logger.info("Inserted %s/%s rows...", i, n)
 
         conn.commit()
-        print(f"Seeded {n} rows into users table.")
+        logger.info("Seeded %s rows into users table.", n)
 
 
 if __name__ == "__main__":
