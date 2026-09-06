@@ -38,7 +38,8 @@ def _collect_explain_plans(conn, result: BenchmarkResult) -> dict[str, str]:
     plans = {}
     for q in result.queries:
         try:
-            plans[q.name] = run_explain(conn, q.query)
+            params = (1000,) if "%s" in q.query else None
+            plans[q.name] = run_explain(conn, q.query, params)
         except Exception as e:
             logger.warning("EXPLAIN failed for %s: %s", q.name, e)
             plans[q.name] = f"Error: {e}"
