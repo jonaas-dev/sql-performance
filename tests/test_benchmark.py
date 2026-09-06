@@ -7,7 +7,7 @@ from benchmarks.select_star import SelectStarBenchmark
 from benchmarks.index_usage import IndexUsageBenchmark
 from benchmarks.join_vs_subquery import JoinVsSubqueryBenchmark
 from benchmarks.pagination import PaginationBenchmark
-from app.benchmark import run_benchmark, result_to_plot_data, list_benchmarks
+from app.benchmark import run_benchmark, result_to_plot_data, list_benchmarks, run_explain
 from app.config import QUERIES_DIR
 
 
@@ -165,3 +165,22 @@ def test_pagination_build_plot():
 
     assert isinstance(buf, io.BytesIO)
     assert buf.getvalue()[:4] == b"\x89PNG"
+
+
+def test_run_explain():
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+    mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+    mock_cursor.fetchall.return_value = [
+        ("Seq Scan on users  (cost=0.00..35482.00 rows=1000000 width=57)",),
+        ("  Filter: (age > 30)",),
+        ("Planning Time: 0.082 ms",),
+        ("Execution Time: 150.123 ms",),
+    ]
+
+    plan = run_explain(mock_conn, "SELECT * FROM users WHERE age > %s", (30,))
+
+    assert "Seq Scan on users" in plan
+    assert "Execution Time" in plan
+    assert mock_cursor.execute.called
