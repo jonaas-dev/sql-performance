@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_DB_HOST: localhost
+      TEST_DB_PORT: 5432
+      TEST_DB_USER: user
+      TEST_DB_PASSWORD: password
+      TEST_DB_NAME: test_db
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Create schema
+        run: |
+          # pg_isready answers before the POSTGRES_DB bootstrap finishes, so
+          # wait on the database itself rather than on the server.
+          until psql "$DSN" -c 'SELECT 1' >/dev/null 2>&1; do sleep 1; done
+          psql "$DSN" -f sql/init.sql
+        env:
+          DSN: postgresql://user:password@localhost:5432/test_db
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Test
+        run: pytest --cov --cov-report=term-missing

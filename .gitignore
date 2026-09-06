@@ -173,3 +173,11 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# macOS
+.DS_Store
+
+# Tool caches created by the container at runtime
+.matplotlib/
+.gunicorn/
+.ruff_cache/

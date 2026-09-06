@@ -1,51 +1,64 @@
-version: '3.9'
-
 services:
   db:
     container_name: postgres-db
     image: postgres:17
-    env_file:
-      - .env
     environment:
-      POSTGRES_DB: ${DB_NAME}
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-test_db}
+      POSTGRES_USER: ${DB_USER:-user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - db_network
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "${DB_USER}", "-d", "${DB_NAME}"]
-      interval: 10s
-      retries: 5
-      start_period: 30s
-      timeout: 10s
+      test: ["CMD", "pg_isready", "-U", "${DB_USER:-user}", "-d", "${DB_NAME:-test_db}"]
+      interval: 5s
+      retries: 10
+      start_period: 10s
+      timeout: 5s
 
-  python-app:
-    container_name: python-app
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - .:/app
+  seed:
+    build: .
+    container_name: sqlperf-seed
+    command: ["python", "-m", "sql.seed"]
+    environment:
+      DB_HOST: postgres-db
+      DB_NAME: ${DB_NAME:-test_db}
+      DB_USER: ${DB_USER:-user}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      DB_SEED_SIZE: ${DB_SEED_SIZE:-medium}
     networks:
       - db_network
-    env_file:
-      - .env
-    environment:
-      - DB_HOST=postgres-db
     depends_on:
       db:
         condition: service_healthy
+    restart: "no"
+
+  app:
+    container_name: python-app
+    build: .
+    environment:
+      DB_HOST: postgres-db
+      DB_NAME: ${DB_NAME:-test_db}
+      DB_USER: ${DB_USER:-user}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - db_network
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    volumes:
+      - results:/app/results
     ports:
-      - "8000:8000"
-    command: ["gunicorn", "--workers", "3", "--bind", "0.0.0.0:8000", "wsgi:app", "--reload"]
+      - "127.0.0.1:8000:8000"
 
 volumes:
   postgres_data:
+  results:
 
 networks:
   db_network:
