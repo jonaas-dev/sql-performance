@@ -3,6 +3,7 @@ import statistics
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import Enum
 from io import BytesIO
 
 import pandas as pd
@@ -41,6 +42,58 @@ class Measurement:
         return max(0.0, (self.wall_ms - self.server_ms) / self.wall_ms)
 
 
+class CostCentre(Enum):
+    """Who actually pays for a slow query.
+
+    Keeping these apart is the single most useful thing this tool does: a cost
+    paid in the driver is fixed by asking for less data, while a cost paid in
+    PostgreSQL is fixed by changing the query or the indexes. Optimising the
+    wrong one wastes weeks.
+    """
+
+    DATABASE = (
+        "PostgreSQL",
+        "PostgreSQL itself does the extra work — more rows scanned, a worse plan. "
+        "Fix it with indexes or a different query shape.",
+    )
+    CLIENT = (
+        "the client",
+        "PostgreSQL is barely involved. The time goes to transferring rows and to the "
+        "driver turning bytes into objects, so the bill lands in your API process, not "
+        "your database. Fix it by asking for less data.",
+    )
+    TRANSFER = (
+        "the result set",
+        "Both sides are doing reasonable work; there is simply more data crossing the "
+        "wire than the question required. Fix it by returning fewer rows or columns.",
+    )
+
+    def __init__(self, label, description):
+        self.label = label
+        self.description = description
+
+
+@dataclass
+class Takeaway:
+    """The conclusion a benchmark reached, derived from the run it just did.
+
+    Built from measured values rather than written by hand, so it cannot drift
+    away from the chart above it.
+    """
+
+    verdict: str
+    cost_centre: CostCentre
+    points: list[str]
+    #: What to do about it.
+    advice: str = ""
+
+    def __post_init__(self):
+        if not self.verdict.strip():
+            raise ValueError("a takeaway needs a verdict")
+        if not self.points:
+            raise ValueError("a takeaway needs evidence; a conclusion without it is an opinion")
+
+
 @dataclass
 class QueryResult:
     name: str
@@ -63,6 +116,7 @@ class BenchmarkResult:
     comparison_table: pd.DataFrame
     plot_buffer: BytesIO
     explain_plans: dict[str, str] = field(default_factory=dict)
+    takeaway: "Takeaway | None" = None
 
 
 def server_execution_ms(cursor, query, params=None) -> float | None:
@@ -118,6 +172,16 @@ def speedup(slow: float | None, fast: float | None) -> str:
     if slow is None or not fast:
         return "n/a"
     return f"{slow / fast:.1f}x"
+
+
+def ratio(slow: float | None, fast: float | None) -> float | None:
+    if slow is None or fast is None or fast <= 0:
+        return None
+    return slow / fast
+
+
+def percent(value: float | None) -> str:
+    return "n/a" if value is None else f"{value * 100:.0f}%"
 
 
 def plot_server_series(ax, query, color):

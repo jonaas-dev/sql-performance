@@ -22,6 +22,7 @@ def _results_page(**kwargs):
         "selected_benchmark": None,
         "selected_size": "medium",
         "sizes": SIZES,
+        "takeaway": None,
     }
     return render_template("results.html", **{**defaults, **kwargs})
 
@@ -73,6 +74,7 @@ def generate():
         benchmark_title=result.title,
         benchmark_description=result.description,
         explain_plans=result.explain_plans or None,
+        takeaway=result.takeaway,
         result_id=result_id,
     )
 
@@ -108,6 +110,7 @@ def view_result(result_id):
     return render_template(
         "view_result.html",
         result=data,
+        takeaway=data.get("takeaway"),
         plot_data=data.get("plot_data"),
         comparison_table=data.get("comparison_table"),
         explain_plans=data.get("explain_plans"),

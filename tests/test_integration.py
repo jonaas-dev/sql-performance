@@ -219,3 +219,48 @@ def test_every_benchmark_reports_server_side_timings(conn):
         for query in result.queries:
             assert len(query.server_times) == len(query.times)
             assert all(t is not None for t in query.server_times), f"{name}/{query.name}"
+
+
+@pytest.mark.parametrize("name", [bm.name for bm in all_benchmarks()])
+def test_every_benchmark_states_a_conclusion(conn, name):
+    """The point of the tool is the lesson, not the chart."""
+    bm = get(name)
+    bm.setup(conn)
+    try:
+        result = bm.run(conn)
+    finally:
+        bm.teardown(conn)
+
+    takeaway = result.takeaway
+    assert takeaway is not None, f"{name} produced numbers but no conclusion"
+    assert takeaway.verdict.strip()
+    assert takeaway.points, "a conclusion with no evidence is an opinion"
+    assert takeaway.cost_centre is not None
+
+
+def test_select_star_blames_the_client_not_the_database(conn):
+    """The whole lesson: SELECT * is not a database problem."""
+    from benchmarks.base import CostCentre
+
+    bm = get("select_star")
+    bm.setup(conn)
+    try:
+        result = bm.run(conn)
+    finally:
+        bm.teardown(conn)
+
+    assert result.takeaway.cost_centre is CostCentre.CLIENT
+
+
+def test_pagination_blames_the_database(conn):
+    """Unlike SELECT *, a deep OFFSET really is PostgreSQL doing extra work."""
+    from benchmarks.base import CostCentre
+
+    bm = get("pagination")
+    bm.setup(conn)
+    try:
+        result = bm.run(conn)
+    finally:
+        bm.teardown(conn)
+
+    assert result.takeaway.cost_centre is CostCentre.DATABASE

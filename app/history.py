@@ -12,6 +12,20 @@ RESULTS_DIR = BASE_DIR / "results"
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H-%M-%S"
 
 
+def _takeaway_to_dict(takeaway) -> dict | None:
+    if takeaway is None:
+        return None
+    return {
+        "verdict": takeaway.verdict,
+        "cost_centre": {
+            "label": takeaway.cost_centre.label,
+            "description": takeaway.cost_centre.description,
+        },
+        "points": takeaway.points,
+        "advice": takeaway.advice,
+    }
+
+
 def _unique_dir(dirname: str) -> Path:
     """Two runs within the same second would otherwise overwrite each other."""
     candidate = RESULTS_DIR / dirname
@@ -50,6 +64,7 @@ def save_result(result: BenchmarkResult, params: dict) -> str:
         "description": result.description,
         "timestamp": timestamp,
         "params": params,
+        "takeaway": _takeaway_to_dict(result.takeaway),
         "queries": [
             {"name": q.name, "query": q.query, "limits": q.limits, "times": q.times,
              "rows_fetched": q.rows_fetched}

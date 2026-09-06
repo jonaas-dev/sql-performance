@@ -11,9 +11,12 @@ from app.benchmark import run_explain
 from benchmarks.base import (
     BenchmarkBase,
     BenchmarkResult,
+    CostCentre,
     QueryResult,
+    Takeaway,
     format_ms,
     measure,
+    ratio,
 )
 from benchmarks.registry import register
 
@@ -112,6 +115,49 @@ class JoinVsSubqueryBenchmark(BenchmarkBase):
                 q.name: run_explain(conn, q.query, (EXPLAIN_THRESHOLD,))
                 for q in (q1, q2, q3)
             },
+            takeaway=self._takeaway(q1, q2, q3),
+        )
+
+    def _takeaway(self, q1: QueryResult, q2: QueryResult, q3: QueryResult) -> Takeaway:
+        i = 0
+        join_rows, user_rows = q1.rows_fetched[i], q2.rows_fetched[i]
+        fanout = ratio(join_rows, user_rows)
+
+        points = [
+            f"JOIN returned {join_rows:,} rows; IN and EXISTS returned {user_rows:,}"
+            + (f" — {fanout:.1f}x more data for the same users." if fanout else "."),
+            "That is not a tie-break, it is a different answer: JOIN emits one row per "
+            "matching order, IN and EXISTS one row per matching user.",
+            f"Inside PostgreSQL, JOIN is the fastest of the three "
+            f"({format_ms(q1.server_times[i])} vs {format_ms(q2.server_times[i])} and "
+            f"{format_ms(q3.server_times[i])}).",
+            f"End to end it is the slowest ({format_ms(q1.times[i])} vs "
+            f"{format_ms(q2.times[i])} and {format_ms(q3.times[i])}), because those extra "
+            "rows still have to reach you.",
+        ]
+        if q2.server_times[i] and q3.server_times[i]:
+            close = abs(q2.server_times[i] - q3.server_times[i]) / max(q2.server_times[i], 0.001)
+            if close < 0.35:
+                points.append(
+                    "IN and EXISTS land within noise of each other: the planner rewrites both "
+                    "into the same semi-join. Check the EXPLAIN output below."
+                )
+
+        return Takeaway(
+            verdict=(
+                f"JOIN shipped {fanout:.1f}x more rows than IN and EXISTS to answer "
+                "the same question"
+                if fanout else "The three patterns do not return the same rows"
+            ),
+            cost_centre=CostCentre.TRANSFER,
+            points=points,
+            advice=(
+                "Pick the pattern by the shape of the answer you need, not by a benchmark. If you "
+                "need columns from the child table, JOIN is the only option that gives them. If "
+                "you only need to know the parent matched, IN or EXISTS say so without "
+                "duplicating the parent row per child — and you avoid a DISTINCT to undo the "
+                "damage later."
+            ),
         )
 
     def teardown(self, conn) -> None:
